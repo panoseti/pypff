@@ -179,8 +179,10 @@ class qconfig(object):
     def __init__(self, fn):
             self.config = {}
             jfiles = glob(fn)
+            if len(jfiles) == 0:
+                raise Exception("The config file(%s) can not be found!"%(fn))
             for file in jfiles:
-                key = file.split('/')[-1].split('.')[0]
+                key = file.split('/')[-1][:-5]
                 with open(file,'rb') as f:
                     config = json.load(f)
                 self.config[key] = {}
