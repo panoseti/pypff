@@ -1,0 +1,9 @@
+README.md
+setup.py
+pypff/__init__.py
+pypff/io.py
+pypff.egg-info/PKG-INFO
+pypff.egg-info/SOURCES.txt
+pypff.egg-info/dependency_links.txt
+pypff.egg-info/requires.txt
+pypff.egg-info/top_level.txt

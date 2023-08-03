@@ -1,0 +1,14 @@
+Metadata-Version: 2.1
+Name: pypff
+Version: 0.0.1
+Summary: Software for FAST reobs project
+Home-page: http://github.com/liuweiseu/pypff
+Author: Wei Liu
+Author-email: liuwei_berkeley@berkeley.edu
+License: GPL
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: GNU General Public License (GPL)
+Classifier: Topic :: Scientific/Engineering :: Astronomy
+
+Software for FAST reobs project
