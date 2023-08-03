@@ -4,6 +4,7 @@ This module provides methods to reading pff data file, including img16, img8, ph
 import json
 import datetime
 import numpy as np
+from glob import glob
 
 # generate dict template
 def _gen_dict_template(d):
@@ -138,7 +139,41 @@ class datapff(object):
                 for k,v in md.items():
                     self.metadata[k].append(v)
         f.close()
-        if channel != -1:
+        if pixel != -1:
             self.data = self.data[:,pixel]
         return self.data, self.metadata
-        
+
+class qconfig(object):
+    '''
+    Description:
+        This class is used for reading config json files, including obs_config, daq_config, data_config, quabo_config...
+    '''
+    def __init__(self, fn):
+            self.config = {}
+            jfiles = glob(fn)
+            for file in jfiles:
+                key = file.split('/')[-1].split('.')[0]
+                with open(file,'rb') as f:
+                    config = json.load(f)
+                self.config[key] = {}
+                for k, v in config.items():
+                    # if it's quabo_config*, we need to convert the str to int
+                    if(key.startswith('quabo_config')):
+                        try:
+                            tmp = v.split(',')
+                        except:
+                            tmp = []
+                        if len(tmp) == 4:
+                            self.config[key][k] = []
+                            for vv in tmp:
+                                if(vv.startswith('0x')):
+                                    self.config[key][k].append(int(vv,16))
+                                else:
+                                    self.config[key][k].append(int(vv,10))
+                        else:
+                            if(v.startswith('0x')):
+                                self.config[key][k] = int(v,16)
+                            else:
+                                self.config[key][k] = int(v,10)
+                    else:
+                        self.config[key] = config
