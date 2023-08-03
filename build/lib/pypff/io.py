@@ -7,6 +7,8 @@ import numpy as np
 from glob import glob
 from . import pixelmap
 
+QUABO_DIM = 16
+
 # generate dict template
 def _gen_dict_template(d):
     template = {}
@@ -101,7 +103,7 @@ class datapff(object):
             self.dtype = np.uint8
         self.metadata = {}
 
-    def readpff(self, samples=-1, skip = 0, pixel = -1, quabo = 0, ver='qfb'):
+    def readpff(self, samples=-1, skip = 0, pixel = -1, quabo = 0, ver='qfb', metadata=False):
         '''
         Description:
             Read data from a data pff file.
@@ -133,20 +135,25 @@ class datapff(object):
             tmp.shape = (-1, int(self.datasize/self.bpp))
             # get data
             self.data = tmp[:, int(self._md_size/self.bpp):]
-            # we need to skip the '*'
-            metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
-            metadataraw = metadataraw.tobytes()
-            for md_raw in metadataraw.splitlines():
-                md = json.loads(md_raw.decode('utf-8'))
-                if not bool(self.metadata):
-                    template = _gen_dict_template(md)
-                    self.metadata = template
-                for k,v in md.items():
-                    self.metadata[k].append(v)
+            if(metadata==True):
+                # we need to skip the '*'
+                metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
+                metadataraw = metadataraw.tobytes()
+                for md_raw in metadataraw.splitlines():
+                    md = json.loads(md_raw.decode('utf-8'))
+                    if not bool(self.metadata):
+                        template = _gen_dict_template(md)
+                        self.metadata = template
+                    for k,v in md.items():
+                        self.metadata[k].append(v)
         f.close()
         if pixel != -1:
             if type(pixel) == list:
-                ind = pixelmap.get_data_index(quabo, ver, pixel)
+                tmp = pixel[0] * QUABO_DIM + pixel[1]
+                # convert the pixel loc to the maroc loc
+                loc = pixelmap.get_pixel_loc(quabo,ver,tmp)
+                # convert the maroc loc to the index in data packets
+                ind = pixelmap.get_data_index(quabo, ver, loc)
             else:
                 ind = pixel
             self.data = self.data[:,ind]
