@@ -13,6 +13,11 @@ QUABO_DIM = 16
 def _gen_dict_template(d):
     template = {}
     for k in d:
+        # chagne TEMP1 to DET_TEMP, and change TEMP1 to FPGA_TEMP
+        if k == 'TEMP1':
+            k = 'DET_TEMP'
+        if k == 'TEMP2':
+            k = 'FPGA_TEMP'
         template[k] = []
     return template
 
@@ -51,6 +56,11 @@ class hkpff(object):
                 template = _gen_dict_template(hk[key])
                 self.hk_info[key] = template
             for k,v in hk[key].items():
+                # chagne TEMP1 to DET_TEMP, and change TEMP1 to FPGA_TEMP
+                if k == 'TEMP1':
+                    k = 'DET_TEMP'
+                if k == 'TEMP2':
+                    k = 'FPGA_TEMP'
                 try:
                     # if the type of value is int
                     self.hk_info[key][k].append(int(v))
