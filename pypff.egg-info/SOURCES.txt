@@ -2,6 +2,11 @@ README.md
 setup.py
 pypff/__init__.py
 pypff/io.py
+pypff/pixelmap.py
+pypff/pixelmap_maroc2phys_bga.py
+pypff/pixelmap_maroc2phys_qfp.py
+pypff/pixelmap_phys2maroc_bga.py
+pypff/pixelmap_phys2maroc_qfp.py
 pypff.egg-info/PKG-INFO
 pypff.egg-info/SOURCES.txt
 pypff.egg-info/dependency_links.txt

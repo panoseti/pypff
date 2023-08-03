@@ -5,6 +5,7 @@ import json
 import datetime
 import numpy as np
 from glob import glob
+from . import pixelmap
 
 # generate dict template
 def _gen_dict_template(d):
@@ -100,7 +101,7 @@ class datapff(object):
             self.dtype = np.uint8
         self.metadata = {}
 
-    def readpff(self, samples=-1, skip = 0, pixel = -1):
+    def readpff(self, samples=-1, skip = 0, pixel = -1, quabo = 0, ver='qfb'):
         '''
         Description:
             Read data from a data pff file.
@@ -110,9 +111,13 @@ class datapff(object):
                              Default = -1
             -- skip(int): Skip the number of smaples.
                           Default = 0
-            -- pixel(int): select the channel.
+            -- pixel(int or list): select the pixel.
                           If it's -1, we will get the data of all the channels.
                           Default = -1
+            -- quabo(int): It specifies the quabo number on the mobo.
+                          Default = 0
+            -- ver(str): quabo version.
+                        Default = 'qfp'
         Outputs:
             -- metadata(dict): a dict contains the metadata from each sample.
             -- data(np.array): data array.
@@ -140,8 +145,14 @@ class datapff(object):
                     self.metadata[k].append(v)
         f.close()
         if pixel != -1:
-            self.data = self.data[:,pixel]
+            if type(pixel) == list:
+                ind = pixelmap.get_data_index(quabo, ver, pixel)
+            else:
+                ind = pixel
+            self.data = self.data[:,ind]
         return self.data, self.metadata
+
+
 
 class qconfig(object):
     '''
