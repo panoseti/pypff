@@ -17,7 +17,7 @@ def package_files(package_dir, subdirectory):
 data_files = ['pypff']
 
 setup(name='pypff',
-    version = '0.0.1',
+    version = '0.0.2',
     description = 'Software for FAST reobs project',
     long_description = 'Software for FAST reobs project',
     license = 'GPL',

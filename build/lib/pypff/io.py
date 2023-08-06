@@ -7,9 +7,76 @@ import numpy as np
 from glob import glob
 from . import pixelmap
 
-QUABO_DIM = 16
+MOBO_DIM = 16
+QUABO_DIM = 32
 
+# The metadata loc in the data is hard-coded here.
+loc_arr = np.zeros(2, dtype=object)
+# metadata loc for ph256
+# metadata example
+'''
+b'{ "quabo_num": 0, "pkt_num":      32280, "pkt_tai":  398, "pkt_nsec": 723300414, "tv_sec": 1690934633, "tv_usec": 720082}\n'
+'''
+loc_arr[0] = {
+    'quabo_num' : [14, 16],
+    'pkt_num'   : [28, 39],
+    'pkt_tai'   : [51, 56],
+    'pkt_nsec'  : [69, 79],
+    'tv_sec'    : [90, 101],
+    'tv_usec'   : [113, 120]
+}
+# metadata loc for ph1024, img16 and img8
+# metadata example
+'''
+'{\n   
+    "quabo_0": { "pkt_num":      23855, "pkt_tai":  906, "pkt_nsec": 774507484, "tv_sec": 1691048805, "tv_usec": 778782}, \n   
+    "quabo_1": { "pkt_num":      16262, "pkt_tai":  906, "pkt_nsec": 774507492, "tv_sec": 1691048805, "tv_usec": 778789}, \n   
+    "quabo_2": { "pkt_num":       9069, "pkt_tai":  906, "pkt_nsec": 774507484, "tv_sec": 1691048805, "tv_usec": 778800}, \n   
+    "quabo_3": { "pkt_num":       1234, "pkt_tai":  906, "pkt_nsec": 774507484, "tv_sec": 1691048805, "tv_usec": 778804}
+    \n}\n'
+'''
+loc_arr[1] = {
+    'quabo_0':
+    {
+        'pkt_num': [28 ,39],
+        'pkt_tai': [51 ,56],
+        'pkt_nsec': [69, 79],
+        'tv_sec': [90, 101],
+        'tv_usec': [113, 120]
+    },
+    'quabo_1':
+    {
+        'pkt_num': [150 ,161],
+        'pkt_tai': [173 ,178],
+        'pkt_nsec': [191, 201],
+        'tv_sec': [212, 223],
+        'tv_usec': [235, 242]
+    },
+    'quabo_2':
+    {
+        'pkt_num': [272 ,283],
+        'pkt_tai': [295 ,300],
+        'pkt_nsec': [313, 323],
+        'tv_sec': [334, 345],
+        'tv_usec': [357, 364]
+    },
+    'quabo_3':
+    {
+        'pkt_num': [394 ,405],
+        'pkt_tai': [417 ,422],
+        'pkt_nsec': [435, 445],
+        'tv_sec': [456, 467],
+        'tv_usec': [479, 486]
+    }
+}  
+md_loc = {
+    'ph256': loc_arr[0],
+    'ph1024': loc_arr[1],
+    'img16': loc_arr[1],
+    'img8': loc_arr[1]
+}
 # generate dict template
+#
 def _gen_dict_template(d):
     template = {}
     for k in d:
@@ -108,7 +175,7 @@ class datapff(object):
         if self.dp == 'ph256' or self.dp == 'ph1024':
             self.dtype = np.int16
         elif self.dp == 'img16':
-            self.dtpye = np.uint16
+            self.dtype = np.uint16
         else:
             self.dtype = np.uint8
         self.metadata = {}
@@ -134,39 +201,60 @@ class datapff(object):
             -- metadata(dict): a dict contains the metadata from each sample.
             -- data(np.array): data array.
         '''
-        
-        f = open(self.fn,'rb')
-        # read data out from a ph256 file
-        if self.dp == 'ph256':
+        # get metadata location, which is hard-coded above
+        metadata_loc = md_loc[self.dp]
+        # read data out from a ph256, img16 or ph1024 file
+        with open(self.fn,'rb') as f:
             if samples == -1:
                 tmp = np.frombuffer(f.read(),dtype = self.dtype)
             else:
                 tmp = np.frombuffer(f.read(samples*self.datasize/self.bpp), dtype=self.dtype)
-            tmp.shape = (-1, int(self.datasize/self.bpp))
-            # get data
-            self.data = tmp[:, int(self._md_size/self.bpp):]
-            if(metadata==True):
-                # we need to skip the '*'
-                metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
-                metadataraw = metadataraw.tobytes()
-                for md_raw in metadataraw.splitlines():
-                    md = json.loads(md_raw.decode('utf-8'))
-                    if not bool(self.metadata):
-                        template = _gen_dict_template(md)
-                        self.metadata = template
-                    for k,v in md.items():
-                        self.metadata[k].append(v)
-        f.close()
-        if pixel != -1:
-            if type(pixel) == list:
-                tmp = pixel[0] * QUABO_DIM + pixel[1]
-                # convert the pixel loc to the maroc loc
-                loc = pixelmap.get_pixel_loc(quabo,ver,tmp)
-                # convert the maroc loc to the index in data packets
-                ind = pixelmap.get_data_index(quabo, ver, loc)
+        # reshape the data
+        tmp.shape = (-1, int(self.datasize/self.bpp))
+        # get data
+        self.data = tmp[:, int(self._md_size/self.bpp):]
+        if(metadata==True):
+            # we need to skip the '* '
+            metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
+            metadataraw = metadataraw.tobytes()
+            # convert byte to int8
+            metadataraw = np.frombuffer(metadataraw, dtype=np.int8)
+            metadataraw.shape = (-1, self._md_size - 2)
+            # create metadata template
+            md_json = json.loads(metadataraw[0].tobytes().decode('utf-8')) 
+            if self.dp == 'ph1024' or self.dp == 'img16' or self.dp == 'img8':
+                # ph1024, img16 and img8 data has two stages of metadata
+                template = _gen_dict_template(md_json)
+                for key in template.keys():
+                    subtemplate = _gen_dict_template(md_json[key])
+                    template[key] = subtemplate
+                self.metadata = template
+                for k in metadata_loc.keys():
+                    for subk in metadata_loc[k].keys():
+                        # get the start row and end row from the metadata_loc
+                        r0 = metadata_loc[k][subk][0]
+                        r1 = metadata_loc[k][subk][1]
+                        tmp = metadataraw[:, r0:r1]
+                        # covert int8 to string
+                        tmp = tmp.view(f'S{r1-r0}')
+                        self.metadata[k][subk] = tmp.astype(np.uint64)
+            elif self.dp == 'ph256':
+                template = _gen_dict_template(md_json)
+                # ph256 data has one stage of metadata
+                self.metadata = template
+                for k in metadata_loc.keys():
+                    # get the start row and end row from the metadata_loc
+                    r0 = metadata_loc[k][0]
+                    r1 = metadata_loc[k][1]
+                    tmp = metadataraw[:, r0:r1]
+                    # covert int8 to string
+                    tmp = tmp.view(f'S{r1-r0}')
+                    self.metadata[k] = tmp.astype(np.uint64)
             else:
-                ind = pixel
-            self.data = self.data[:,ind]
+                raise Exception('Data type is not supproted: %s'%(self.dp))
+        
+        if pixel != -1:
+            self.data = self.data[:,pixel]
         return self.data, self.metadata
 
 
