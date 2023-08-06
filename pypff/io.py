@@ -156,6 +156,7 @@ class datapff(object):
         self.fn = fn
         info = self.fn.split('.')
         startdt_str = info[0].split('_')[1]
+        # It looks like we have two formats of file name
         self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H:%M:%SZ')
         self.dp = info[1].split('_')[1]
         self.bpp = int(info[2].split('_')[1])
@@ -180,7 +181,7 @@ class datapff(object):
             self.dtype = np.uint8
         self.metadata = {}
 
-    def readpff(self, samples=-1, skip = 0, pixel = -1, quabo = 0, ver='qfb', metadata=False):
+    def readpff(self, samples=-1, skip = 0, pixel = -1, ver='qfb', metadata=False):
         '''
         Description:
             Read data from a data pff file.
@@ -190,7 +191,7 @@ class datapff(object):
                              Default = -1
             -- skip(int): Skip the number of smaples.
                           Default = 0
-            -- pixel(int or list): select the pixel.
+            -- pixel(int): select the pixel.
                           If it's -1, we will get the data of all the channels.
                           Default = -1
             -- quabo(int): It specifies the quabo number on the mobo.

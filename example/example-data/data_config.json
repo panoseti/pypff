@@ -1,0 +1,10 @@
+{
+    "run_type": "pe-steps-ph8",
+    "gain": 60,
+    "pulse_height": {
+        "pe_threshold": -1,
+        "two_pixel_trigger": 0,
+        "three_pixel_trigger": 0
+    },
+    "max_file_size_mb": 4000
+}

@@ -1,0 +1,12 @@
+{
+  "CHANMASK_0": "0xffffffff",
+  "CHANMASK_1": "0xffffffff",
+  "CHANMASK_2": "0xffffffff",
+  "CHANMASK_3": "0xffffffff",
+  "CHANMASK_4": "0xffffffff",
+  "CHANMASK_5": "0xffffffff",
+  "CHANMASK_6": "0xffffffff",
+  "CHANMASK_7": "0xffffffff",
+  "CHANMASK_8": "0x155",
+  "GOEMASK": "0x3"
+}
