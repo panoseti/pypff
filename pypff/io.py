@@ -213,7 +213,7 @@ class datapff(object):
         tmp.shape = (-1, int(self.datasize/self.bpp))
         # get data
         self.data = tmp[:, int(self._md_size/self.bpp):]
-        if(metadata==True):
+        if metadata==True and tmp.shape[0] != 0:
             # we need to skip the '* '
             metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
             metadataraw = metadataraw.tobytes()
