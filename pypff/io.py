@@ -155,13 +155,23 @@ class datapff(object):
         '''
         self.fn = fn
         info = self.fn.split('.')
-        startdt_str = info[0].split('_')[1]
+        stringIndex = 0
+        if len(info[0]) != 0:
+            stringIndex = 0
+        else:
+            stringIndex = 1
+
+        startdt_str = info[stringIndex].split('_')[1]
+        stringIndex += 1
         # It looks like we have two formats of file name
         self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H:%M:%SZ')
-        self.dp = info[1].split('_')[1]
-        self.bpp = int(info[2].split('_')[1])
-        self.module = int(info[3].split('_')[1])
-        self.seqno = int(info[4].split('_')[1])
+        self.dp = info[stringIndex].split('_')[1]
+        stringIndex += 1
+        self.bpp = int(info[stringIndex].split('_')[1])
+        stringIndex += 1
+        self.module = int(info[stringIndex].split('_')[1])
+        stringIndex += 1
+        self.seqno = int(info[stringIndex].split('_')[1])
         if self.dp == 'ph256':
             self._md_size = 124
             self._pixels = 256
