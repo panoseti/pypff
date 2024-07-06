@@ -19,7 +19,7 @@ If miniconda is installed, please create and activate the python environment.
    **Note**: This is because numpy can't be installed automatically, even though it's in the install_requires list.
 4. install the package
     ```
-    cd pywu
+    cd pypff
     pip install .
     ```
     **Note:** The packeage is tested under python3.9.16. It should work under python3.x. 

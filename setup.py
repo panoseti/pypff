@@ -17,9 +17,9 @@ def package_files(package_dir, subdirectory):
 data_files = ['pypff']
 
 setup(name='pypff',
-    version = '0.0.2',
-    description = 'Software for FAST reobs project',
-    long_description = 'Software for FAST reobs project',
+    version = '0.0.3',
+    description = 'Software for reading pff files generated in PANOSETI project',
+    long_description = 'Software for reading pff files generated in PANOSETI project',
     license = 'GPL',
     author = 'Wei Liu',
     author_email = 'liuwei_berkeley@berkeley.edu',
