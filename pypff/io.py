@@ -100,7 +100,7 @@ class hkpff(object):
         Input:
             -- fn(str): file name of a hk.pff 
         '''
-        self.fn = fn
+        self.fn = fn.split('/')[-1]
         self.hk_info = {}
                 
     def readhk(self):
