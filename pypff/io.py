@@ -153,14 +153,13 @@ class datapff(object):
         Input:
             -- fn(str): pff file name.
         '''
-        self.fn = fn
+        self.fn = fn.split('/')[-1]
         info = self.fn.split('.')
         stringIndex = 0
         if len(info[0]) != 0:
             stringIndex = 0
         else:
             stringIndex = 1
-
         startdt_str = info[stringIndex].split('_')[1]
         stringIndex += 1
         # It looks like we have two formats of file name
