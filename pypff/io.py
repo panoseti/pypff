@@ -154,7 +154,8 @@ class datapff(object):
             -- fn(str): pff file name.
         '''
         self.fn = fn
-        info = self.fn.split('/')[-1].split('.')
+        fn_str = fn.split('/')[-1]
+        info = fn_str.split('.')
         stringIndex = 0
         if len(info[0]) != 0:
             stringIndex = 0
