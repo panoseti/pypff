@@ -100,7 +100,7 @@ class hkpff(object):
         Input:
             -- fn(str): file name of a hk.pff 
         '''
-        self.fn = fn.split('/')[-1]
+        self.fn = fn
         self.hk_info = {}
                 
     def readhk(self):
@@ -153,8 +153,8 @@ class datapff(object):
         Input:
             -- fn(str): pff file name.
         '''
-        self.fn = fn.split('/')[-1]
-        info = self.fn.split('.')
+        self.fn = fn
+        info = self.fn.split('/')[-1].split('.')
         stringIndex = 0
         if len(info[0]) != 0:
             stringIndex = 0
