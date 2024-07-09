@@ -219,7 +219,7 @@ class datapff(object):
             if samples == -1:
                 tmp = np.frombuffer(f.read(),dtype = self.dtype)
             else:
-                tmp = np.frombuffer(f.read(samples*self.datasize/self.bpp), dtype=self.dtype)
+                tmp = np.frombuffer(f.read(samples*int(self.datasize/self.bpp)), dtype=self.dtype)
         # reshape the data
         tmp.shape = (-1, int(self.datasize/self.bpp))
         # get data
