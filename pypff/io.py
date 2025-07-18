@@ -168,7 +168,7 @@ class datapff(object):
             self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H:%M:%SZ')
         except:
             # macos
-            self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H_%M_%SZ')
+            self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H-%M-%SZ')
         self.dp = info[stringIndex].split('_')[1]
         stringIndex += 1
         self.bpp = int(info[stringIndex].split('_')[1])
