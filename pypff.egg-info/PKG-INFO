@@ -1,7 +1,7 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: pypff
-Version: 0.0.2
-Summary: Software for FAST reobs project
+Version: 0.0.5
+Summary: Software for reading pff files generated in PANOSETI project
 Home-page: http://github.com/liuweiseu/pypff
 Author: Wei Liu
 Author-email: liuwei_berkeley@berkeley.edu
@@ -10,5 +10,19 @@ Classifier: Development Status :: 5 - Production/Stable
 Classifier: Intended Audience :: Science/Research
 Classifier: License :: OSI Approved :: GNU General Public License (GPL)
 Classifier: Topic :: Scientific/Engineering :: Astronomy
+Requires-Dist: numpy
+Requires-Dist: astropy
+Requires-Dist: datetime
+Requires-Dist: pyjson
+Requires-Dist: scipy
+Requires-Dist: matplotlib
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: summary
 
-Software for FAST reobs project
+Software for reading pff files generated in PANOSETI project

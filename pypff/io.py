@@ -267,7 +267,8 @@ class datapff(object):
                     self.metadata[k] = tmp.astype(np.uint64)
             else:
                 raise Exception('Data type is not supproted: %s'%(self.dp))
-        
+        for k in self.metadata.keys():
+            self.metadata[k] = np.array(self.metadata[k].flat)
         if pixel != -1:
             self.data = self.data[:,pixel]
         return self.data, self.metadata

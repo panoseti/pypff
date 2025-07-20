@@ -154,14 +154,28 @@ class datapff(object):
             -- fn(str): pff file name.
         '''
         self.fn = fn
-        info = self.fn.split('.')
-        startdt_str = info[0].split('_')[1]
+        fn_str = fn.split('/')[-1]
+        info = fn_str.split('.')
+        stringIndex = 0
+        if len(info[0]) != 0:
+            stringIndex = 0
+        else:
+            stringIndex = 1
+        startdt_str = info[stringIndex].split('_')[1]
+        stringIndex += 1
         # It looks like we have two formats of file name
-        self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H:%M:%SZ')
-        self.dp = info[1].split('_')[1]
-        self.bpp = int(info[2].split('_')[1])
-        self.module = int(info[3].split('_')[1])
-        self.seqno = int(info[4].split('_')[1])
+        try:
+            self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H:%M:%SZ')
+        except:
+            # macos
+            self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H-%M-%SZ')
+        self.dp = info[stringIndex].split('_')[1]
+        stringIndex += 1
+        self.bpp = int(info[stringIndex].split('_')[1])
+        stringIndex += 1
+        self.module = int(info[stringIndex].split('_')[1])
+        stringIndex += 1
+        self.seqno = int(info[stringIndex].split('_')[1])
         if self.dp == 'ph256':
             self._md_size = 124
             self._pixels = 256
@@ -209,7 +223,7 @@ class datapff(object):
             if samples == -1:
                 tmp = np.frombuffer(f.read(),dtype = self.dtype)
             else:
-                tmp = np.frombuffer(f.read(samples*self.datasize/self.bpp), dtype=self.dtype)
+                tmp = np.frombuffer(f.read(samples*int(self.datasize/self.bpp)), dtype=self.dtype)
         # reshape the data
         tmp.shape = (-1, int(self.datasize/self.bpp))
         # get data
@@ -253,7 +267,8 @@ class datapff(object):
                     self.metadata[k] = tmp.astype(np.uint64)
             else:
                 raise Exception('Data type is not supproted: %s'%(self.dp))
-        
+        for k in self.metadata.keys():
+            self.metadata[k] = np.array(self.metadata[k].flat)
         if pixel != -1:
             self.data = self.data[:,pixel]
         return self.data, self.metadata
