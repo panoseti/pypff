@@ -5,8 +5,8 @@ This python package is used for reading data files genetated by [PANOSETI obs so
 Miniconda is recommended to create a vritual python environment, so that it won't mess up the python environment on your system.  
 If miniconda is installed, please create and activate the python environment.
     ```
-    conda create -n wu_env python=3.9
-    conda activate wu_env
+    conda create -n py39 python=3.9
+    conda activate py39
     ``` 
 2. clone the repository
     ```
