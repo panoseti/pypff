@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: pypff
-Version: 0.0.5
+Version: 0.0.6
 Summary: Software for reading pff files generated in PANOSETI project
 Home-page: http://github.com/liuweiseu/pypff
 Author: Wei Liu

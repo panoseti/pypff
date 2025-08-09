@@ -229,12 +229,15 @@ class datapff(object):
         # get data
         self.data = tmp[:, int(self._md_size/self.bpp):]
         if metadata==True and tmp.shape[0] != 0:
-            # we need to skip the '* '
-            metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
+            # we need to skip the '* ', which are 2 bytes
+            if self.bpp == 1:
+                metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 2]
+            else:
+                metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
             metadataraw = metadataraw.tobytes()
             # convert byte to int8
             metadataraw = np.frombuffer(metadataraw, dtype=np.int8)
-            metadataraw.shape = (-1, self._md_size - 2)
+            metadataraw.shape = (-1, self._md_size - 2) 
             # create metadata template
             md_json = json.loads(metadataraw[0].tobytes().decode('utf-8')) 
             if self.dp == 'ph1024' or self.dp == 'img16' or self.dp == 'img8':
@@ -267,8 +270,13 @@ class datapff(object):
                     self.metadata[k] = tmp.astype(np.uint64)
             else:
                 raise Exception('Data type is not supproted: %s'%(self.dp))
-        for k in self.metadata.keys():
-            self.metadata[k] = np.array(self.metadata[k].flat)
+        if self.dp == 'ph256':
+            for k in self.metadata.keys():
+                self.metadata[k] = np.array(self.metadata[k].flat)
+        elif self.dp == 'img16' or self.dp == 'img8' or self.dp == 'ph1024':
+            for k in self.metadata.keys():
+                for kk in self.metadata[k].keys():
+                    self.metadata[k][kk] = np.array(self.metadata[k][kk].flat)
         if pixel != -1:
             self.data = self.data[:,pixel]
         return self.data, self.metadata

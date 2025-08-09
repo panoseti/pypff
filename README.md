@@ -5,7 +5,7 @@ This python package is used for reading data files genetated by [PANOSETI obs so
 Miniconda is recommended to create a vritual python environment, so that it won't mess up the python environment on your system.  
 If miniconda is installed, please create and activate the python environment.
     ```
-    conda create -n wu_env python=3.9
+    conda create -n wu_env python=3.13
     conda activate wu_env
     ``` 
 2. clone the repository
@@ -22,7 +22,7 @@ If miniconda is installed, please create and activate the python environment.
     cd pypff
     pip install .
     ```
-    **Note:** The packeage is tested under python3.9.16. It should work under python3.x. 
+    **Note:** The packeage is tested under python3.9.16 and 3.13.2. It should work under python3.x. 
 
 # Introduction
 Currently, we only have one module(io.py) in this package, which contains three class: hkpff, datapff and qconfig.

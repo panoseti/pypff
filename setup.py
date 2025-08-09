@@ -17,7 +17,7 @@ def package_files(package_dir, subdirectory):
 data_files = ['pypff']
 
 setup(name='pypff',
-    version = '0.0.5',
+    version = '0.0.6',
     description = 'Software for reading pff files generated in PANOSETI project',
     long_description = 'Software for reading pff files generated in PANOSETI project',
     license = 'GPL',
