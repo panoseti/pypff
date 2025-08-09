@@ -5,19 +5,19 @@ This python package is used for reading data files genetated by [PANOSETI obs so
 Miniconda is recommended to create a vritual python environment, so that it won't mess up the python environment on your system.  
 If miniconda is installed, please create and activate the python environment.
     ```
-    conda create -n wu_env python=3.13
-    conda activate wu_env
+    conda create -n py313 python=3.13
+    conda activate py313
     ``` 
-2. clone the repository
+1. clone the repository
     ```
     git clone https://github.com/liuweiseu/pypff.git
     ```
-3. install numpy
+2. install numpy
     ```
     pip install numpy
     ```
    **Note**: This is because numpy can't be installed automatically, even though it's in the install_requires list.
-4. install the package
+3. install the package
     ```
     cd pypff
     pip install .
