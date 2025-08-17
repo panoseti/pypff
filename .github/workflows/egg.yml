@@ -16,7 +16,11 @@ jobs:
     - name: check python version
       run:
         python -V
-    
+
+    - name: install necessary packages
+      run:
+        pip install numpy
+        
     - name: install pypff
       run:
         pip install .
