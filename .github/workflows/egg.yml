@@ -11,7 +11,7 @@ jobs:
 
     steps:
     - name: clone pypff
-      uses: actions/checkoutv4
+      uses: actions/checkout@v4
 
     - name: check python version
       run:
