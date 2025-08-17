@@ -10,7 +10,7 @@ print(hk_info.keys())
 
 # test config files reading
 c = pypff.io.qconfig('config-data/*.json')
-print(c['obs_config'].keys())
+print(c.config['obs_config'].keys())
 print(c.config['daq_config'].keys())
 print(c.config['data_config'].keys())
 print(c.config['network_config'].keys())
