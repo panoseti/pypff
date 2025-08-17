@@ -28,4 +28,4 @@ jobs:
     - name: run test
       run: |
         cd tests
-        python ./pypff-test
+        python ./pypff-test.py
