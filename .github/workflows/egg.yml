@@ -1,0 +1,18 @@
+name: pypff-CI
+
+on: 
+  push:
+    branches: ["actions"]
+
+jobs:
+  pypff-test:
+  name: pypff-test
+  runs-on: ubuntu-latest
+
+  steps:
+  - name: clone pypff
+    uses: actions/checkoutv4
+
+  - name: check python version
+    run:
+      python -V
