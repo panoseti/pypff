@@ -6,13 +6,13 @@ on:
 
 jobs:
   pypff-test:
-  name: pypff-test
-  runs-on: ubuntu-latest
+    name: pypff-test
+    runs-on: ubuntu-latest
 
-  steps:
-  - name: clone pypff
-    uses: actions/checkoutv4
+    steps:
+    - name: clone pypff
+      uses: actions/checkoutv4
 
-  - name: check python version
-    run:
-      python -V
+    - name: check python version
+      run:
+        python -V
