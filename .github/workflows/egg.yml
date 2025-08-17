@@ -16,3 +16,7 @@ jobs:
     - name: check python version
       run:
         python -V
+    
+    - name: install pypff
+      run:
+        pip install .
