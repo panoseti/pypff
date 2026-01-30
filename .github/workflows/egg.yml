@@ -2,7 +2,7 @@ name: pypff-CI
 
 on: 
   push:
-    branches: ["actions"]
+    branches: ["dev"]
 
 jobs:
   pypff-test:
