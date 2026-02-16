@@ -1,6 +1,6 @@
 name: pypff-CI
 
-on: 
+on:
   push:
     branches: ["dev"]
 
@@ -10,22 +10,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: clone pypff
-      uses: actions/checkout@v4
+      - name: clone pypff
+        uses: actions/checkout@v4
 
-    - name: check python version
-      run:
-        python -V
+      - name: install necessary packages
+        run: pip install pytest
 
-    - name: install necessary packages
-      run:
-        pip install numpy
+      - name: install pypff
+        run: pip install .
 
-    - name: install pypff
-      run:
-        pip install .
-    
-    - name: run test
-      run: |
-        cd tests
-        python ./pypff-test.py
+      - name: run test
+        run: |
+          cd tests
+          pytest ./test_pypff.py
