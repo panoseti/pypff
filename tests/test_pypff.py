@@ -18,4 +18,4 @@ def test_read_hk():
     hk_info = hkpff.readhk()
     for k in hk_info.keys():
         for kk in hk_info[k].keys():
-            assert hk_info[k][kk] == expected_hk_results[k][kk]
+            assert hk_info[k][kk][0] == expected_hk_results[k][kk]
