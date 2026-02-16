@@ -22,4 +22,4 @@ jobs:
       - name: run test
         run: |
           cd tests
-          pytest ./test_pypff.py
+          pytest -v ./test_pypff.py

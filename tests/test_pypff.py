@@ -1,6 +1,9 @@
 import pypff
-import json
+import numpy as np
 
+"""
+test hk read
+"""
 expected_hk_results = {
     "WPS": {"Computer_UTC": 1754975261.080837, "POWER": "ON"},
 
@@ -19,7 +22,66 @@ def test_read_hk():
     for k in hk_info.keys():
         for kk in hk_info[k].keys():
             try:
-                v = float(expected_hk_results[k][kk])
+                if kk == 'DET_TEMP':
+                    v = float(expected_hk_results[k]['TEMP1'])
+                elif kk == 'FPGA_TEMP':
+                    v = float(expected_hk_results[k]['TEMP2'])
+                else:
+                    v = float(expected_hk_results[k][kk])
             except:
                 v = expected_hk_results[k][kk]
             assert hk_info[k][kk][0] == v
+
+"""
+test pff read
+"""
+expected_pff_metadata = {
+    'quabo_num': 0, 
+    'pkt_num': 7112,
+    'pkt_tai': 715, 
+    'pkt_nsec': 934405331, 
+    'tv_sec': 1754109119, 
+    'tv_usec': 872646
+}
+
+expected_pff_data = np.array(
+      [ 19,  13,   7,  14,  13,  16,  20,  13,  18,   7,  32,  15,   7,
+        16,  16,  25,  13,   9,  15,  20,   4,  24,  12,   7,  13,  28,
+        10,   9,   6,   9,  16,  23,  20,  29,  11,  23,  29,  24,   6,
+        15,   4,  13,   9,  27,   4,  15,  19,   8,   9,  28,   6,  21,
+        10,  14,   7,  25, -13,  17,  11,  21,  20,  21,   0,  18,  18,
+        35,   9,  19,  25,  12,  15,  13,  17,  11,   2,  10,  10,  15,
+        12,  17,   9,  11,  22,  26,   1,  15,  24,   7,  38,   6,   3,
+        13,  19,  18,  15,  23,  16,   9,  16,  22,  16,  14,   9,  24,
+        16,  29,  11,   0,  14,  16,   4,  14,  24,  48,  37,  31,  25,
+        -1,   6,  31,  20,  11,  12,  13,  26,  17,  18,  14,  35,  35,
+        31,  52,  16,  37,  28,  14,  26,  30,  13,  16,  21,  10,  15,
+        19,  16,  61,  32,  66,  25,  34,  30,  17,  26,  13,  10,  24,
+        12,  16,  21,   8,  21,  40,  34,  61, 141,  86,  69,  17,  20,
+        16,  17,   0,  14,  19,  20,  31,  13,  25,  18,  71,  81, 221,
+       155,  60,  44,  22,  10,   4,   9,   6,   3,  22,  14,   3,  14,
+        52,  55,  59,  83, 122,  44,  20,  17,  14,  13,   9,  15,  22,
+        13,  16,  21,  12,  36,  48,  43,  19,  21,  45,  16,  32,  14,
+         8,  16,  13,  20,   2,  18,   9,  20,  27,  39,  11,  18,  17,
+        -7,  14,  25,  24,  -2,  14,  18,  22,  12,  23,   8,  20,   8,
+        13,  24,  17,  17,  12,  18,  10,  16,   8], dtype=np.int16)
+
+def test_read_pff():
+    dpff = pypff.io.datapff('sci-data/start_2025-08-02T04-31-52Z.dp_ph256.bpp_2.module_254.seqno_0.pff')
+    data, metadata = dpff.readpff(metadata=True)
+    # check metadata
+    for k in metadata.keys():
+        try:
+            v = int(expected_pff_metadata[k])
+        except:
+            v = expected_pff_metadata[k]
+        assert metadata[k][0] == v
+    # check data
+    results = np.equal(data[0], expected_pff_data)
+    for r in results:
+        assert r == True
+
+"""
+test read configs:
+These are json files, so there is no need to test this.
+"""
