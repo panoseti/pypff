@@ -2,7 +2,7 @@ import pypff
 import json
 
 expected_hk_results = {
-    "WPS": {"Computer_UTC": "1754975261.080837", "POWER": "ON"},
+    "WPS": {"Computer_UTC": 1754975261.080837, "POWER": "ON"},
 
 "QUABO_1019": {"Computer_UTC": "1754975259.3758526", "BOARDLOC": "1019", "HVMON0": "-54.18142", "HVMON1": "-54.14238", "HVMON2": "-54.21558", "HVMON3": "-54.21436", "HVIMON0": "0.0002097024", "HVIMON1": "0.0002102739", "HVIMON2": "0.00020939760000000002", "HVIMON3": "0.00021515070000000002", "RAWHVMON": "71.553", "V12MON": "1.18565818", "V18MON": "1.78506642", "V33MON": "3.3041844", "V37MON": "3.726942", "I10MON": "1.206296", "I18MON": "0.3997728", "I33MON": "0.1133622", "TEMP1": "43.0", "TEMP2": "63.853998769609404", "VCCINT": "0.9824066162109375", "VCCAUX": "1.7735595703125", "UID": "0x0000000000000000", "SHUTTER_STATUS": "0", "LIGHT_SENSOR_STATUS": "0", "PCBREV_N": "1", "FWTIME": "0x2cfb9557", "FWVER": "0209", "StartUp": "0", "AGG_STATUS_MSG": "ok,", "AGG_STATUS_LEVEL": "0", "DETR0_CURR": "0.0001011224", "DETR1_CURR": "0.0001017721364729459", "DETR2_CURR": "0.00010074914308617235", "DETR3_CURR": "0.00010650468797595193"},
 
@@ -18,4 +18,8 @@ def test_read_hk():
     hk_info = hkpff.readhk()
     for k in hk_info.keys():
         for kk in hk_info[k].keys():
-            assert hk_info[k][kk][0] == expected_hk_results[k][kk]
+            try:
+                v = float(expected_hk_results[k][kk])
+            except:
+                v = expected_hk_results[k][kk]
+            assert hk_info[k][kk][0] == v
