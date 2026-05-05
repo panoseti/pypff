@@ -291,7 +291,8 @@ class hkpff:
                     data = orjson.loads(line)
                     for key, values in data.items():
                         if key not in hk_info:
-                            hk_info[key] = {k: [] for k in values}
+                            hk_info[key] = {}
+                        
                         for k, v in values.items():
                             target_k = k
                             if k == 'TEMP1': target_k = 'DET_TEMP'
@@ -301,8 +302,12 @@ class hkpff:
                                 hk_info[key][target_k] = []
                                 
                             try:
-                                if '.' in v: hk_info[key][target_k].append(float(v))
-                                else: hk_info[key][target_k].append(int(v))
+                                if isinstance(v, str) and '.' in v:
+                                    hk_info[key][target_k].append(float(v))
+                                elif isinstance(v, str) and v.isdigit():
+                                    hk_info[key][target_k].append(int(v))
+                                else:
+                                    hk_info[key][target_k].append(v)
                             except (ValueError, TypeError):
                                 hk_info[key][target_k].append(v)
                 except Exception:

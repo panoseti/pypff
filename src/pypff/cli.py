@@ -7,7 +7,7 @@ app = typer.Typer(help="Pypff Management CLI")
 
 @app.command()
 def test(
-    tier: str = typer.Argument("unit", help="Test tier to run: unit, logic, or all"),
+    tier: str = typer.Argument("all", help="Test tier to run: unit, logic, legacy, or all"),
     lint: bool = typer.Option(False, "--lint", help="Run linters (Ruff/MyPy)"),
 ):
     """Run pypff test suite."""
@@ -23,6 +23,10 @@ def test(
     if tier == "logic" or tier == "all":
         print("Running Tier 2 (Logic) tests...")
         subprocess.run(["pytest", "src/ci/tier2_logic"], check=True)
+
+    if tier == "legacy" or tier == "all":
+        print("Running Legacy Integration tests...")
+        subprocess.run(["pytest", "src/ci/legacy_tests"], check=True)
 
 if __name__ == "__main__":
     app()

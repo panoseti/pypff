@@ -1,5 +1,8 @@
 import pypff
 import numpy as np
+from pathlib import Path
+
+DATA_DIR = Path(__file__).parent
 
 """
 test hk read
@@ -17,7 +20,7 @@ expected_hk_results = {
 }
 
 def test_read_hk():
-    hkpff = pypff.io.hkpff('hk-data/hk.pff')
+    hkpff = pypff.io.hkpff(str(DATA_DIR / 'hk-data/hk.pff'))
     hk_info = hkpff.readhk()
     for k in hk_info.keys():
         for kk in hk_info[k].keys():
@@ -67,7 +70,7 @@ expected_pff_data = np.array(
         13,  24,  17,  17,  12,  18,  10,  16,   8], dtype=np.int16)
 
 def test_read_pff():
-    dpff = pypff.io.datapff('sci-data/start_2025-08-02T04-31-52Z.dp_ph256.bpp_2.module_254.seqno_0.pff')
+    dpff = pypff.io.datapff(str(DATA_DIR / 'sci-data/start_2025-08-02T04-31-52Z.dp_ph256.bpp_2.module_254.seqno_0.pff'))
     data, metadata = dpff.readpff(metadata=True)
     # check metadata
     for k in metadata.keys():

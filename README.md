@@ -63,11 +63,10 @@ Run the test suite via the built-in CLI:
 uv run pypff all
 ```
 
-Or run with linting:
-
-```bash
-uv run pypff all --lint
-```
+The test suite includes:
+- **Tier 1 (Unit):** Basic logic and timing tests.
+- **Tier 2 (Logic):** Higher-level I/O and sequence tests.
+- **Legacy Integration:** The original `pypff` test suite using provided sample data.
 
 ## Dockerized CI
 Build the CI environment:
