@@ -1,4 +1,4 @@
-from . import io
+from .io import PanosetiRun, PFFSequence, hkpff, qconfig, QuaboHeader, ModuleHeader
 from . import pixelmap
 from .pixelmap_maroc2phys_bga import maroc2phys_bga
 from .pixelmap_maroc2phys_qfp import maroc2phys_qfp

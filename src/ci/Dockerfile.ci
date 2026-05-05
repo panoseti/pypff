@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Stage: base
+# Python + pypff dev dependencies.
+# ═══════════════════════════════════════════════════════════════════════════
+FROM python:3.14-slim AS base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT="/opt/venv" \
+    PATH="/opt/venv/bin:$PATH"
+
+# ── UID/GID parity ───────────────────────────────────────────────────────────
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gcc build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Create the panoseti user.
+RUN groupadd -o -g "${HOST_GID}" panoseti \
+ && useradd -o -u "${HOST_UID}" -g "${HOST_GID}" -m -s /bin/bash panoseti
+
+RUN mkdir -p /opt/venv /data /app \
+ && chown -R panoseti:panoseti /opt/venv /data /app /tmp/
+
+USER panoseti
+
+# Dependency Caching Layer
+COPY --chown=panoseti:panoseti pypff/pyproject.toml ./
+# Create a dummy uv.lock if it doesn't exist to satisfy copy
+RUN touch uv.lock
+RUN --mount=type=cache,uid=${HOST_UID},target=/home/panoseti/.cache/uv \
+    uv sync --no-install-project --all-extras
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Stage: test-runner
+# ═══════════════════════════════════════════════════════════════════════════
+FROM base AS test-runner
+
+# Prepare directories
+RUN mkdir -p /app/.pytest_cache /app/tmp/
+
+# Copy source code
+COPY --chown=panoseti:panoseti pypff/ .
+
+RUN --mount=type=cache,uid=${HOST_UID},target=/home/panoseti/.cache/uv \
+    uv sync --all-extras
+
+USER root
+CMD ["sleep", "infinity"]

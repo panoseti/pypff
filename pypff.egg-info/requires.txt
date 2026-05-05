@@ -1,6 +1,0 @@
-numpy
-astropy
-datetime
-pyjson
-scipy
-matplotlib

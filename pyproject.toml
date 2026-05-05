@@ -1,8 +1,50 @@
 [build-system]
-requires = [
-    "setuptools>=61",
-    "wheel",
-    "numpy"
-]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "pypff"
+version = "1.0.0"
+description = "Modernized PFF I/O library for PanoSETI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL" }
+authors = [
+    { name = "Wei Liu", email = "liuwei_berkeley@berkeley.edu" },
+    { name = "Nicolas Rault-Wang", email = "nicolas@berkeley.edu" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License (GPL)",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "orjson>=3.9.0",
+    "pydantic>=2.5.0",
+    "rich>=13.0.0",
+    "astropy",
+    "scipy",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio",
+    "typer>=0.9.0",
+    "ruff",
+    "mypy",
+    "dask",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+pypff = "pypff.cli:app"
