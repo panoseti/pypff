@@ -1,380 +1,336 @@
-import bisect
-import mmap
-import re
-import time
-from collections.abc import Sequence, Iterator
-from pathlib import Path
-from typing import Any, Optional
-
+'''
+This module provides methods to reading pff data file, including img16, img8, ph256, ph1024 and hk.pff
+'''
+import json
+import datetime
 import numpy as np
-import orjson
-from pydantic import BaseModel, ValidationError
+import mmap
+from glob import glob
+from . import pixelmap
 
-from .utils import (
-    get_coarse_time_ns,
-    get_precise_time_ns,
-    parse_filename,
-    extract_seqno,
-)
+MOBO_DIM = 16
+QUABO_DIM = 32
 
-# --- Pydantic Models for PFF Headers ---
+# The metadata loc in the data is hard-coded here.
+loc_arr = np.zeros(2, dtype=object)
+# metadata loc for ph256
+# metadata example
+'''
+b'{ "quabo_num": 0, "pkt_num":      32280, "pkt_tai":  398, "pkt_nsec": 723300414, "tv_sec": 1690934633, "tv_usec": 720082}\n'
+'''
+loc_arr[0] = {
+    'quabo_num' : [14, 16],
+    'pkt_num'   : [28, 39],
+    'pkt_tai'   : [51, 56],
+    'pkt_nsec'  : [69, 79],
+    'tv_sec'    : [90, 101],
+    'tv_usec'   : [113, 120]
+}
+# metadata loc for ph1024, img16 and img8
+# metadata example
+'''
+'{\n   
+    "quabo_0": { "pkt_num":      23855, "pkt_tai":  906, "pkt_nsec": 774507484, "tv_sec": 1691048805, "tv_usec": 778782}, \n   
+    "quabo_1": { "pkt_num":      16262, "pkt_tai":  906, "pkt_nsec": 774507492, "tv_sec": 1691048805, "tv_usec": 778789}, \n   
+    "quabo_2": { "pkt_num":       9069, "pkt_tai":  906, "pkt_nsec": 774507484, "tv_sec": 1691048805, "tv_usec": 778800}, \n   
+    "quabo_3": { "pkt_num":       1234, "pkt_tai":  906, "pkt_nsec": 774507484, "tv_sec": 1691048805, "tv_usec": 778804}
+    \n}\n'
+'''
+loc_arr[1] = {
+    'quabo_0':
+    {
+        'pkt_num': [28 ,39],
+        'pkt_tai': [51 ,56],
+        'pkt_nsec': [69, 79],
+        'tv_sec': [90, 101],
+        'tv_usec': [113, 120]
+    },
+    'quabo_1':
+    {
+        'pkt_num': [150 ,161],
+        'pkt_tai': [173 ,178],
+        'pkt_nsec': [191, 201],
+        'tv_sec': [212, 223],
+        'tv_usec': [235, 242]
+    },
+    'quabo_2':
+    {
+        'pkt_num': [272 ,283],
+        'pkt_tai': [295 ,300],
+        'pkt_nsec': [313, 323],
+        'tv_sec': [334, 345],
+        'tv_usec': [357, 364]
+    },
+    'quabo_3':
+    {
+        'pkt_num': [394 ,405],
+        'pkt_tai': [417 ,422],
+        'pkt_nsec': [435, 445],
+        'tv_sec': [456, 467],
+        'tv_usec': [479, 486]
+    }
+}  
+md_loc = {
+    'ph256': loc_arr[0],
+    'ph1024': loc_arr[1],
+    'img16': loc_arr[1],
+    'img8': loc_arr[1]
+}
+# generate dict template
+#
+def _gen_dict_template(d):
+    template = {}
+    for k in d:
+        # chagne TEMP1 to DET_TEMP, and change TEMP1 to FPGA_TEMP
+        if k == 'TEMP1':
+            k = 'DET_TEMP'
+        if k == 'TEMP2':
+            k = 'FPGA_TEMP'
+        template[k] = []
+    return template
 
-class PFFHeader(BaseModel):
-    """Base model for all PFF headers."""
-    pkt_num: int
-    pkt_tai: int
-    pkt_nsec: int
-    tv_sec: int
-    tv_usec: int
-
-    @property
-    def timestamp_ns(self) -> int:
-        """Returns nanoseconds since epoch as int64 compatible integer."""
-        return get_precise_time_ns(self.tv_sec, self.tv_usec, self.pkt_nsec, self.pkt_tai)
-
-
-class QuaboHeader(PFFHeader):
-    quabo_num: int
-
-
-class ModuleHeader(BaseModel):
-    quabo_0: PFFHeader
-    quabo_1: PFFHeader
-    quabo_2: PFFHeader
-    quabo_3: PFFHeader
-
-    @property
-    def timestamp_ns(self) -> int:
-        # Use first non-zero quabo for timing
-        for i in range(4):
-            q = getattr(self, f"quabo_{i}")
-            if q.tv_sec != 0:
-                return q.timestamp_ns
-        return self.quabo_0.timestamp_ns
-
-
-class FrameConfig(BaseModel):
-    header_size: int
-    payload_size: int
-    frame_size: int
-    image_shape: tuple[int, int]
-    dtype_str: str
-    bytes_per_pixel: int
-    format_name: str
-
-    @property
-    def dtype(self) -> np.dtype:
-        return np.dtype(self.dtype_str)
-
-# --- Core I/O Classes ---
-
-class PFFSequence:
-    """
-    Represents a time-ordered sequence of PFF files for a single data product.
-    Zero-copy access via mmap.
-    """
-
-    def __init__(self, file_paths: Sequence[str | Path]):
-        paths = [Path(p) for p in file_paths]
-        if not paths:
-            raise ValueError("No files provided.")
-
-        self.file_paths = sorted(paths, key=extract_seqno)
-        self.name = self.file_paths[0].name.split('.seqno')[0]
-        self.meta = parse_filename(self.file_paths[0].name)
-
-        self.header_size: int = 0
-        self.frame_config: Optional[FrameConfig] = None
-        self._file_frame_counts: list[int] = []
-        self._cumulative_frames: list[int] = []
-        self._total_frames: int = 0
-        self._timestamps: Optional[np.ndarray] = None
-
-        self._open_mmaps: dict[int, mmap.mmap] = {}
-        self._open_files: dict[int, Any] = {}
-
-        self._analyze_structure()
-        self._index_files()
-
-    def __del__(self) -> None:
-        self.close()
-
-    def close(self) -> None:
-        """Explicitly close file handles."""
-        for mm in self._open_mmaps.values():
-            mm.close()
-        for f in self._open_files.values():
-            f.close()
-        self._open_mmaps.clear()
-        self._open_files.clear()
-
-    def _analyze_structure(self) -> None:
-        """Determines frame structure and enforces exact PanoSETI shapes and types."""
-        sample_file = next((p for p in self.file_paths if p.stat().st_size > 0), None)
-        if not sample_file:
-            return
-
-        with open(sample_file, 'rb') as f:
-            chunk = f.read(4096)
-            match = re.search(b'}\n\n\\*', chunk)
-            if not match:
-                match = re.search(b'\n\n\\*', chunk)
-
-            if not match:
-                raise ValueError(f"Invalid PFF format in {sample_file}")
-
-            self.header_size = match.end() - 1
-            fmt = str(self.meta.get('dp', 'unknown')).lower()
-
-            shape: tuple[int, int]
-            dtype: Any
-            bpp: int
-            if 'img8' in fmt:
-                shape = (32, 32)
-                dtype = np.uint8
-                bpp = 1
-            elif 'img16' in fmt:
-                shape = (32, 32)
-                dtype = np.uint16
-                bpp = 2
-            elif 'ph256' in fmt:
-                shape = (16, 16)
-                dtype = np.int16
-                bpp = 2
-            elif 'ph1024' in fmt:
-                shape = (32, 32)
-                dtype = np.int16
-                bpp = 2
-            else:
-                shape = (32, 32)
-                dtype = np.int16
-                bpp = 2
-
-            payload_size = shape[0] * shape[1] * bpp
-            frame_size = self.header_size + 1 + payload_size
-
-            self.frame_config = FrameConfig(
-                header_size=self.header_size,
-                payload_size=payload_size,
-                frame_size=frame_size,
-                image_shape=shape,
-                dtype_str=np.dtype(dtype).name,
-                bytes_per_pixel=bpp,
-                format_name=fmt
-            )
-
-    def _index_files(self) -> None:
-        total = 0
-        if self.frame_config:
-            for p in self.file_paths:
-                size = p.stat().st_size
-                n = size // self.frame_config.frame_size if size > 0 else 0
-                self._file_frame_counts.append(n)
-                self._cumulative_frames.append(total + n)
-                total += n
-        self._total_frames = total
-
-    def __len__(self) -> int:
-        return self._total_frames
-
-    def _get_mmap(self, file_idx: int) -> Optional[mmap.mmap]:
-        if file_idx in self._open_mmaps:
-            return self._open_mmaps[file_idx]
-
-        filepath = self.file_paths[file_idx]
-        f = open(filepath, 'rb')
-        try:
-            mm = mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ)
-            self._open_files[file_idx] = f
-            self._open_mmaps[file_idx] = mm
-            return mm
-        except ValueError:
-            return None
-
-    def _locate_frame(self, idx: int) -> tuple[int, int]:
-        if not (0 <= idx < self._total_frames):
-            raise IndexError(f"Frame index {idx} out of range")
-        file_idx = bisect.bisect_right(self._cumulative_frames, idx)
-        prev_limit = self._cumulative_frames[file_idx - 1] if file_idx > 0 else 0
-        local_idx = idx - prev_limit
-        return file_idx, local_idx
-
-    def get_frame(self, idx: int) -> tuple[QuaboHeader | ModuleHeader | dict[str, Any], np.ndarray]:
-        if not self.frame_config:
-            raise RuntimeError("Frame configuration not analyzed.")
-
-        file_idx, local_idx = self._locate_frame(idx)
-        conf = self.frame_config
-        mm = self._get_mmap(file_idx)
-        if not mm:
-            raise RuntimeError(f"Failed to access mmap for file {file_idx}")
-
-        offset = local_idx * conf.frame_size
-        header_end = offset + conf.header_size
-        header_bytes = mm[offset:header_end]
-        header_dict = orjson.loads(header_bytes)
-
-        header_obj: QuaboHeader | ModuleHeader | dict[str, Any]
-        try:
-            if 'quabo_0' in header_dict:
-                header_obj = ModuleHeader(**header_dict)
-            elif 'quabo_num' in header_dict:
-                header_obj = QuaboHeader(**header_dict)
-            else:
-                header_obj = header_dict
-        except ValidationError:
-            header_obj = header_dict
-
-        img_start = header_end + 1
-        img_end = img_start + conf.payload_size
-        img = np.frombuffer(mm[img_start:img_end], dtype=conf.dtype).reshape(conf.image_shape)
-
-        return header_obj, img
-
-    def get_image_array(self, start: int = 0, count: Optional[int] = None) -> np.ndarray:
-        if not self.frame_config:
-            return np.empty(0)
-        if count is None:
-            count = self._total_frames - start
-        count = min(count, self._total_frames - start)
-        if count <= 0:
-            return np.empty((0, *self.frame_config.image_shape), dtype=self.frame_config.dtype)
-
-        conf = self.frame_config
-        dtype = conf.dtype
-        itemsize = dtype.itemsize
-
-        chunks = []
-        frames_collected = 0
-        current_global = start
-
-        while frames_collected < count:
-            file_idx, local_start = self._locate_frame(current_global)
-            file_total = self._file_frame_counts[file_idx]
-            to_read = min(count - frames_collected, file_total - local_start)
-
-            if to_read > 0:
-                mm = self._get_mmap(file_idx)
-                if not mm:
-                    raise RuntimeError("Failed to read mmap block.")
-
-                start_offset = (local_start * conf.frame_size) + conf.header_size + 1
-                can_use_strided = (conf.frame_size % itemsize == 0) and (start_offset % itemsize == 0)
-
-                if can_use_strided:
-                    strides = (conf.frame_size, conf.image_shape[1] * itemsize, itemsize)
-                    chunk = np.ndarray(shape=(to_read, *conf.image_shape), dtype=dtype, buffer=mm, offset=start_offset, strides=strides)
-                    chunks.append(chunk)
-                else:
-                    temp = np.empty((to_read, *conf.image_shape), dtype=dtype)
-                    cursor = start_offset
-                    for i in range(to_read):
-                        end = cursor + conf.payload_size
-                        temp[i] = np.frombuffer(mm[cursor:end], dtype=dtype).reshape(conf.image_shape)
-                        cursor += conf.frame_size
-                    chunks.append(temp)
-
-            frames_collected += to_read
-            current_global += to_read
-
-        if len(chunks) == 1:
-            return chunks[0].copy() if chunks[0].base is not None else chunks[0]
-        return np.concatenate(chunks, axis=0)
-
-
-class PanosetiRun:
-    """Represents a PanoSETI observing run (directory)."""
-    def __init__(self, run_dir: str | Path):
-        self.run_dir = Path(run_dir)
-        self.products: dict[str, PFFSequence] = {}
-        self.configs: dict[str, Any] = {}
-        self._load_configs()
-        self._scan()
-
-    def _load_configs(self) -> None:
-        for f in self.run_dir.glob("*.json"):
-            try:
-                with open(f, 'rb') as jf:
-                    self.configs[f.stem] = orjson.loads(jf.read())
-            except Exception:
-                pass
-
-    def _scan(self) -> None:
-        files_map: dict[str, list[Path]] = {}
-        for f in self.run_dir.glob("*.pff"):
-            if f.name == 'hk.pff' or f.stat().st_size == 0:
-                continue
-            parts = f.name.split('.')
-            key_parts = [p for p in parts if not (p.startswith('start') or p.startswith('seqno') or p == 'pff')]
-            key = ".".join(key_parts)
-            if key not in files_map:
-                files_map[key] = []
-            files_map[key].append(f)
-
-        for k, v in files_map.items():
-            try:
-                seq = PFFSequence(v)
-                if len(seq) > 0:
-                    self.products[k] = seq
-            except Exception:
-                pass
-
-    def list_products(self) -> list[str]:
-        return sorted(self.products.keys())
-
-    def get_product(self, product_name: str) -> PFFSequence:
-        if product_name not in self.products:
-            raise KeyError(f"Product {product_name} not found.")
-        return self.products[product_name]
-
-# --- Legacy Compatibility & Helpers ---
-
-class hkpff:
-    """Modernized housekeeping parser."""
-    def __init__(self, fn: str = 'hk.pff'):
-        self.fn = Path(fn)
-
-    def readhk(self) -> dict[str, dict[str, list[Any]]]:
-        hk_info: dict[str, dict[str, list[Any]]] = {}
-        if not self.fn.exists():
-            return hk_info
+class hkpff(object):
+    '''
+    Description:
+        The hkpff class reads hk.pff, and returns a dict, including housekeeping of quabo, wrs, wps and gps
+    '''
+    def __init__(self,fn='hk.pff'):
+        '''
+        Description:
+            Create a hkpff object based on the filename.
+        Input:
+            -- fn(str): file name of a hk.pff 
+        '''
+        self.fn = fn
+        self.hk_info = {}
+                
+    def readhk(self):
+        '''
+        Description:
+            Read hk.pff, and convert the info to a dict.
+        Output:
+            -- hk_info(dict): a dict contains all of the hk info.
+        '''
         with open(self.fn, 'rb') as f:
-            for line in f:
-                try:
-                    data = orjson.loads(line)
-                    for key, values in data.items():
-                        if key not in hk_info:
-                            hk_info[key] = {k: [] for k in values}
-                        for k, v in values.items():
-                            # Map old TEMP names to new ones if needed, or keep original
-                            # Original pypff code did mapping: TEMP1 -> DET_TEMP, TEMP2 -> FPGA_TEMP
-                            target_k = k
-                            if k == 'TEMP1': target_k = 'DET_TEMP'
-                            if k == 'TEMP2': target_k = 'FPGA_TEMP'
-                            
-                            if target_k not in hk_info[key]:
-                                hk_info[key][target_k] = []
-                                
-                            try:
-                                # Try to convert to numeric if possible
-                                if '.' in v: hk_info[key][target_k].append(float(v))
-                                else: hk_info[key][target_k].append(int(v))
-                            except (ValueError, TypeError):
-                                hk_info[key][target_k].append(v)
-                except Exception:
-                    continue
-        return hk_info
-
-
-class qconfig:
-    """Modernized config loader."""
-    def __init__(self, pattern: str):
-        self.config = {}
-        base_dir = Path(pattern).parent if '/' in pattern else Path('.')
-        glob_pattern = Path(pattern).name
-        for f in base_dir.glob(glob_pattern):
+            hk_lines = f.readlines()
+        for hk_str in hk_lines:
             try:
-                with open(f, 'rb') as jf:
-                    self.config[f.stem] = orjson.loads(jf.read())
-            except Exception:
-                pass
+                hk = json.loads(hk_str)
+            except:
+                continue
+            key, = hk.keys()
+            # check if the key is already in the hk_info
+            if(not key in self.hk_info):
+                template = _gen_dict_template(hk[key])
+                self.hk_info[key] = template
+            for k,v in hk[key].items():
+                # chagne TEMP1 to DET_TEMP, and change TEMP1 to FPGA_TEMP
+                if k == 'TEMP1':
+                    k = 'DET_TEMP'
+                if k == 'TEMP2':
+                    k = 'FPGA_TEMP'
+                try:
+                    # if the type of value is int
+                    self.hk_info[key][k].append(int(v))
+                except:
+                    try:
+                        # if the type of value is float
+                        self.hk_info[key][k].append(float(v))
+                    except:
+                        self.hk_info[key][k].append(v)
+        return self.hk_info
+
+
+class datapff(object):
+    '''
+    Description:
+        The datapff class reads all kinds of data files, including img16, img8, ph256, ph1024.
+    '''
+
+    def __init__(self, fn):
+        '''
+        Description:
+            Read data from a data pff file.
+        Input:
+            -- fn(str): pff file name.
+        '''
+        self.fn = fn
+        fn_str = fn.split('/')[-1]
+        info = fn_str.split('.')
+        stringIndex = 0
+        if len(info[0]) != 0:
+            stringIndex = 0
+        else:
+            stringIndex = 1
+        startdt_str = info[stringIndex].split('_')[1]
+        stringIndex += 1
+        # It looks like we have two formats of file name
+        try:
+            self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H:%M:%SZ')
+        except:
+            # macos
+            self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H-%M-%SZ')
+        self.dp = info[stringIndex].split('_')[1]
+        stringIndex += 1
+        self.bpp = int(info[stringIndex].split('_')[1])
+        stringIndex += 1
+        self.module = int(info[stringIndex].split('_')[1])
+        stringIndex += 1
+        self.seqno = int(info[stringIndex].split('_')[1])
+        if self.dp == 'ph256':
+            self._md_size = 124
+            self._pixels = 256
+            self._d_size = self._pixels * self.bpp
+            self.datasize = self._md_size + self._d_size
+        else:
+            # TODO: check if the metadata size for ph1024/img16/img8 is the same
+            self._md_size = 492
+            self._pixels = 1024
+            self._d_size = self._pixels * self.bpp
+            self.datasize = self._md_size + self._d_size
+        if self.dp == 'ph256' or self.dp == 'ph1024':
+            self.dtype = np.int16
+        elif self.dp == 'img16':
+            self.dtype = np.uint16
+        else:
+            self.dtype = np.uint8
+        self.metadata = {}
+
+    def readpff(self, samples=-1, skip = 0, pixel = -1, ver='qfb', metadata=False, mode='mmap'):
+        '''
+        Description:
+            Read data from a data pff file.
+        Inputs:
+            -- samples(int): The sample number to be read out.
+                             If it's -1, all of the data will be read out.
+                             Default = -1
+            -- skip(int): Skip the number of smaples.
+                          Default = 0
+            -- pixel(int): select the pixel.
+                          If it's -1, we will get the data of all the channels.
+                          Default = -1
+            -- quabo(int): It specifies the quabo number on the mobo.
+                          Default = 0
+            -- ver(str): quabo version.
+                        Default = 'qfp'
+            -- metadata(bool): If True, read Medatadata out.
+                        Default = False
+            -- mode(str): reading mode. 'mmap' or 'read'.
+                        Default = 'mmap'
+
+        Outputs:
+            -- metadata(dict): a dict contains the metadata from each sample.
+            -- data(np.array): data array.
+        '''
+        # get metadata location, which is hard-coded above
+        metadata_loc = md_loc[self.dp]
+        # read data out from a ph256, img16 or ph1024 file
+        with open(self.fn,'rb') as f:
+            if mode == 'mmap':
+                mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+                if samples == -1:
+                    tmp = np.frombuffer(mm,dtype = self.dtype)
+                else:
+                    tmp = np.frombuffer(mm, dtype=self.dtype, count=samples*int(self.datasize/self.bpp), offset=0)
+            elif mode == 'read':
+                if samples == -1:
+                    tmp = np.frombuffer(f.read(),dtype = self.dtype)
+                else:
+                    tmp = np.frombuffer(f.read(samples*int(self.datasize/self.bpp)), dtype=self.dtype)
+            else:
+                raise ValueError(f"mode({mode} is not supported.)")
+        # reshape the data
+        tmp.shape = (-1, int(self.datasize/self.bpp))
+        # get data
+        self.data = tmp[:, int(self._md_size/self.bpp):]
+        if metadata==True and tmp.shape[0] != 0:
+            # we need to skip the '* ', which are 2 bytes
+            if self.bpp == 1:
+                metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 2]
+            else:
+                metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
+            metadataraw = metadataraw.tobytes()
+            # convert byte to int8
+            metadataraw = np.frombuffer(metadataraw, dtype=np.int8)
+            metadataraw.shape = (-1, self._md_size - 2) 
+            # create metadata template
+            md_json = json.loads(metadataraw[0].tobytes().decode('utf-8')) 
+            if self.dp == 'ph1024' or self.dp == 'img16' or self.dp == 'img8':
+                # ph1024, img16 and img8 data has two stages of metadata
+                template = _gen_dict_template(md_json)
+                for key in template.keys():
+                    subtemplate = _gen_dict_template(md_json[key])
+                    template[key] = subtemplate
+                self.metadata = template
+                for k in metadata_loc.keys():
+                    for subk in metadata_loc[k].keys():
+                        # get the start row and end row from the metadata_loc
+                        r0 = metadata_loc[k][subk][0]
+                        r1 = metadata_loc[k][subk][1]
+                        tmp = metadataraw[:, r0:r1]
+                        # covert int8 to string
+                        tmp = tmp.view(f'S{r1-r0}')
+                        self.metadata[k][subk] = tmp.astype(np.uint64)
+            elif self.dp == 'ph256':
+                template = _gen_dict_template(md_json)
+                # ph256 data has one stage of metadata
+                self.metadata = template
+                for k in metadata_loc.keys():
+                    # get the start row and end row from the metadata_loc
+                    r0 = metadata_loc[k][0]
+                    r1 = metadata_loc[k][1]
+                    tmp = metadataraw[:, r0:r1]
+                    # covert int8 to string
+                    tmp = tmp.view(f'S{r1-r0}')
+                    self.metadata[k] = tmp.astype(np.uint64)
+            else:
+                raise Exception('Data type is not supproted: %s'%(self.dp))
+        if self.dp == 'ph256':
+            for k in self.metadata.keys():
+                self.metadata[k] = np.array(self.metadata[k].flat)
+        elif self.dp == 'img16' or self.dp == 'img8' or self.dp == 'ph1024':
+            for k in self.metadata.keys():
+                for kk in self.metadata[k].keys():
+                    self.metadata[k][kk] = np.array(self.metadata[k][kk].flat)
+        if pixel != -1:
+            self.data = self.data[:,pixel]
+        return self.data, self.metadata
+
+
+
+class qconfig(object):
+    '''
+    Description:
+        This class is used for reading config json files, including obs_config, daq_config, data_config, quabo_config...
+    '''
+    def __init__(self, fn):
+            self.config = {}
+            jfiles = glob(fn)
+            if len(jfiles) == 0:
+                raise Exception("The config file(%s) can not be found!"%(fn))
+            for file in jfiles:
+                key = file.split('/')[-1][:-5]
+                with open(file,'rb') as f:
+                    config = json.load(f)
+                self.config[key] = {}
+                for k, v in config.items():
+                    # if it's quabo_config*, we need to convert the str to int
+                    if(key.startswith('quabo_config')):
+                        try:
+                            tmp = v.split(',')
+                        except:
+                            tmp = []
+                        if len(tmp) == 4:
+                            self.config[key][k] = []
+                            for vv in tmp:
+                                if(vv.startswith('0x')):
+                                    self.config[key][k].append(int(vv,16))
+                                else:
+                                    self.config[key][k].append(int(vv,10))
+                        else:
+                            if(v.startswith('0x')):
+                                self.config[key][k] = int(v,16)
+                            else:
+                                self.config[key][k] = int(v,10)
+                    else:
+                        self.config[key] = config

@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
-from pypff.io import PanosetiRun, PFFSequence, hkpff
+from pypff.io2 import PanosetiRun, PFFSequence
+from pypff.io import hkpff
 import numpy as np
 
 EXAMPLE_DATA_DIR = Path(__file__).parents[3] / "example" / "example-data"
