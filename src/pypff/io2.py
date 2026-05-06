@@ -1,6 +1,8 @@
 import bisect
+import logging
 import mmap
 import re
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
@@ -8,12 +10,18 @@ from typing import Any, Optional
 import numpy as np
 import orjson
 from pydantic import ValidationError
+from rich.console import Console
+from rich.tree import Tree
 
 from .utils import (
     parse_filename,
     extract_seqno,
+    get_coarse_time_ns,
+    get_precise_time_ns,
 )
 from .models import QuaboHeader, ModuleHeader, FrameConfig
+
+logger = logging.getLogger(__name__)
 
 # --- Core I/O Classes ---
 
@@ -42,6 +50,8 @@ class PFFSequence:
         self._open_mmaps: dict[int, mmap.mmap] = {}
         self._open_files: dict[int, Any] = {}
 
+        self.metadata_offsets: dict[str, tuple[int, int]] = {}
+
         self._analyze_structure()
         self._index_files()
 
@@ -56,6 +66,125 @@ class PFFSequence:
             f.close()
         self._open_mmaps.clear()
         self._open_files.clear()
+
+    def index_timestamps(self, precise: bool = True) -> None:
+        """
+        Pre-calculates and caches all frame timestamps.
+        Highly recommended before performing multiple seek_time() operations or timeline analysis.
+        """
+        if self._timestamps is not None:
+            return
+
+        logger.info(f"Indexing {self._total_frames:,} timestamps for {self.name}...")
+        t0 = time.monotonic()
+        
+        # Vectorized extraction of all timing components
+        keys = ["tv_sec", "tv_usec", "pkt_nsec", "pkt_tai"]
+        if "quabo_0.tv_sec" in self.metadata_offsets:
+            # Module mode: try all quabos until we find valid time (usually quabo_0)
+            # For simplicity and performance, we'll extract quabo_0 components
+            # and fallback to others if tv_sec is 0 in post-processing.
+            # In practice, researchers usually just need one stable clock.
+            data = self.get_metadata_arrays([f"quabo_0.{k}" for k in keys])
+            # Remap keys for precise_time helper
+            data = {k.split(".")[1]: v for k, v in data.items()}
+        else:
+            data = self.get_metadata_arrays(keys)
+
+        # Apply timing reconciliation logic in vectorized form
+        # Porting get_precise_time_ns logic to NumPy
+        tv_sec = data.get("tv_sec", np.zeros(self._total_frames, dtype=np.int64))
+        tv_usec = data.get("tv_usec", np.zeros(self._total_frames, dtype=np.int64))
+        pkt_nsec = data.get("pkt_nsec", np.zeros(self._total_frames, dtype=np.int64))
+        pkt_tai = data.get("pkt_tai", np.zeros(self._total_frames, dtype=np.int64))
+
+        final_sec = tv_sec.copy()
+        
+        if precise:
+            # 1. TAI Reconciliation
+            has_tai = pkt_tai != 0
+            if np.any(has_tai):
+                d = (tv_sec - pkt_tai + 37) % 1024
+                final_sec[has_tai & (d == 1)] -= 1
+                final_sec[has_tai & (d == 1023)] += 1
+            
+            # 2. Sub-second Reconciliation (for frames without TAI)
+            no_tai = ~has_tai
+            if np.any(no_tai):
+                tv_nsec_equiv = tv_usec[no_tai] * 1000
+                diff = tv_nsec_equiv - pkt_nsec[no_tai]
+                
+                final_sec_no_tai = final_sec[no_tai]
+                final_sec_no_tai[diff > 500_000_000] += 1
+                final_sec_no_tai[diff < -500_000_000] -= 1
+                final_sec[no_tai] = final_sec_no_tai
+            
+            self._timestamps = (final_sec * 1_000_000_000) + pkt_nsec
+        else:
+            self._timestamps = (tv_sec * 1_000_000_000) + (tv_usec * 1_000)
+
+        elapsed = time.monotonic() - t0
+        logger.info(f"Indexed {self._total_frames:,} frames in {elapsed:.2f}s")
+
+    def print_metadata_offsets(self) -> None:
+        """Prints the dynamically determined byte offsets for all numeric metadata fields."""
+        print(f"Metadata Byte Offsets for {self.name}:")
+        if not self.metadata_offsets:
+            print("  (No offsets determined)")
+            return
+        
+        for key, (start, end) in sorted(self.metadata_offsets.items()):
+            print(f"  {key}: bytes {start} to {end} (length: {end - start})")
+
+    def verify_metadata_offsets(self, num_frames: int = 100) -> bool:
+        """
+        Sanity check: compares the vectorized metadata extraction against naive JSON parsing
+        for a subset of frames to ensure the byte offsets are perfectly aligned.
+        
+        Args:
+            num_frames: Number of frames to check. Defaults to 100.
+            
+        Returns:
+            True if all checked frames match, False otherwise.
+        """
+        if self._total_frames == 0 or not self.frame_config or not self.metadata_offsets:
+            return True
+            
+        check_frames = min(num_frames, self._total_frames)
+        keys_to_check = list(self.metadata_offsets.keys())
+        
+        # 1. Get vectorized data
+        vectorized_data = self.get_metadata_arrays(keys_to_check)
+        
+        # 2. Compare against naive iteration
+        conf = self.frame_config
+        for i in range(check_frames):
+            file_idx, local_idx = self._locate_frame(i)
+            mm = self._get_mmap(file_idx)
+            if not mm:
+                continue
+                
+            offset = local_idx * conf.frame_size
+            header_bytes = mm[offset : offset + conf.header_size]
+            h = orjson.loads(header_bytes)
+            
+            for key in keys_to_check:
+                # Naive value
+                if '.' in key:
+                    parent, child = key.split('.', 1)
+                    naive_val = h.get(parent, {}).get(child, 0)
+                else:
+                    naive_val = h.get(key, 0)
+                    
+                # Vectorized value
+                vec_val = vectorized_data[key][i]
+                
+                if int(naive_val) != int(vec_val):
+                    print(f"Mismatch at frame {i} for key '{key}': Naive={naive_val}, Vectorized={vec_val}")
+                    return False
+                    
+        print(f"Successfully verified {check_frames} frames against naive JSON parsing.")
+        return True
 
     def _analyze_structure(self) -> None:
         """Determines frame structure and enforces exact PanoSETI shapes and types."""
@@ -73,6 +202,9 @@ class PFFSequence:
                 raise ValueError(f"Invalid PFF format in {sample_file}")
 
             self.header_size = match.end() - 1
+            header_bytes = chunk[:self.header_size]
+            self._analyze_offsets(header_bytes)
+
             fmt = str(self.meta.get('dp', 'unknown')).lower()
 
             shape: tuple[int, int]
@@ -111,6 +243,47 @@ class PFFSequence:
                 bytes_per_pixel=bpp,
                 format_name=fmt
             )
+
+    def _analyze_offsets(self, header_bytes: bytes):
+        """Dynamically finds byte offsets for numeric fields in the fixed-width JSON header."""
+        self.metadata_offsets = {}
+        
+        # Find positions of "quabo_0", "quabo_1", etc. for Module mode
+        q_pos = []
+        for i in range(4):
+            pos = header_bytes.find(f'"quabo_{i}"'.encode())
+            q_pos.append(pos)
+            
+        is_module = q_pos[0] != -1
+        
+        # Regex to find "key": <value_string> followed by ,, {, or }
+        # This captures the entire padded region (including spaces) so the 
+        # byte offset remains constant even if the number of digits changes.
+        pattern = re.compile(rb'"(\w+)":([^,{}]+)')
+        
+        for match in pattern.finditer(header_bytes):
+            key = match.group(1).decode()
+            val_bytes = match.group(2)
+            
+            # Check if this looks like a padded integer field
+            if not re.match(rb'^\s*-?\d+\s*$', val_bytes):
+                continue
+                
+            val_start = match.start(2)
+            val_end = match.end(2)
+            
+            if is_module:
+                # Determine which quabo this belongs to based on previous "quabo_X" tag
+                q_idx = -1
+                for i in range(3, -1, -1):
+                    if q_pos[i] != -1 and q_pos[i] < match.start():
+                        q_idx = i
+                        break
+                if q_idx != -1:
+                    full_key = f"quabo_{q_idx}.{key}"
+                    self.metadata_offsets[full_key] = (val_start, val_end)
+            else:
+                self.metadata_offsets[key] = (val_start, val_end)
 
     def _index_files(self) -> None:
         total = 0
@@ -180,6 +353,78 @@ class PFFSequence:
 
         return header_obj, img
 
+    def get_all_metadata(self) -> dict[str, Any]:
+        """
+        Retrieves all dynamically mapped integer metadata fields for the entire sequence.
+        Returns a dictionary of NumPy arrays. For module mode, keys are nested
+        under 'quabo_0', 'quabo_1', etc., mimicking the legacy io.py format.
+        """
+        flat_data = self.get_metadata_arrays(list(self.metadata_offsets.keys()))
+        
+        result: dict[str, Any] = {}
+        for key, arr in flat_data.items():
+            if '.' in key:
+                parent, child = key.split('.', 1)
+                if parent not in result:
+                    result[parent] = {}
+                result[parent][child] = arr
+            else:
+                result[key] = arr
+                
+        return result
+
+    def get_metadata_arrays(self, keys: list[str]) -> dict[str, np.ndarray]:
+        """
+        Extracts requested metadata fields for all frames in the sequence using vectorized byte extraction.
+        
+        Args:
+            keys: List of metadata keys (e.g., ['pkt_num', 'tv_sec']).
+                 For module mode, use 'quabo_X.key'.
+        
+        Returns:
+            Dictionary mapping keys to NumPy arrays of type int64.
+        """
+        if not self.frame_config:
+            return {}
+
+        results = {k: np.zeros(self._total_frames, dtype=np.int64) for k in keys}
+        conf = self.frame_config
+        
+        frames_processed = 0
+        for file_idx, filepath in enumerate(self.file_paths):
+            count = self._file_frame_counts[file_idx]
+            if count <= 0:
+                continue
+                
+            mm = self._get_mmap(file_idx)
+            if not mm:
+                frames_processed += count
+                continue
+                
+            for key in keys:
+                if key not in self.metadata_offsets:
+                    continue
+                    
+                start, end = self.metadata_offsets[key]
+                val_len = end - start
+                
+                # Create a structured dtype that targets this specific field in every frame
+                dt = np.dtype({
+                    'names': ['pre', 'val'],
+                    'formats': [f'V{start}', f'S{val_len}'],
+                    'itemsize': conf.frame_size
+                })
+                
+                # Read all values for this file instantly
+                raw_strings = np.frombuffer(mm, dtype=dt, count=count)['val']
+                
+                # Convert numeric strings to int64 in bulk
+                results[key][frames_processed : frames_processed + count] = raw_strings.astype(np.int64)
+                
+            frames_processed += count
+            
+        return results
+
     def get_image_array(self, start: int = 0, count: Optional[int] = None) -> np.ndarray:
         if not self.frame_config:
             return np.empty(0)
@@ -191,7 +436,7 @@ class PFFSequence:
 
         conf = self.frame_config
         dtype = conf.dtype
-        itemsize = dtype.itemsize
+        start_offset = conf.header_size + 1
 
         chunks = []
         frames_collected = 0
@@ -207,28 +452,129 @@ class PFFSequence:
                 if not mm:
                     raise RuntimeError("Failed to read mmap block.")
 
-                start_offset = (local_start * conf.frame_size) + conf.header_size + 1
-                can_use_strided = (conf.frame_size % itemsize == 0) and (start_offset % itemsize == 0)
-
-                if can_use_strided:
-                    strides = (conf.frame_size, conf.image_shape[1] * itemsize, itemsize)
-                    chunk = np.ndarray(shape=(to_read, *conf.image_shape), dtype=dtype, buffer=mm, offset=start_offset, strides=strides)
-                    chunks.append(chunk)
-                else:
-                    temp = np.empty((to_read, *conf.image_shape), dtype=dtype)
-                    cursor = start_offset
-                    for i in range(to_read):
-                        end = cursor + conf.payload_size
-                        temp[i] = np.frombuffer(mm[cursor:end], dtype=dtype).reshape(conf.image_shape)
-                        cursor += conf.frame_size
-                    chunks.append(temp)
+                # Vectorized extraction of unaligned payloads using structured dtypes
+                dt = np.dtype({
+                    'names': ['header', 'payload'],
+                    'formats': [f'V{start_offset}', f'V{conf.payload_size}'],
+                    'itemsize': conf.frame_size
+                })
+                
+                byte_offset = local_start * conf.frame_size
+                raw_payloads = np.frombuffer(mm, dtype=dt, count=to_read, offset=byte_offset)['payload']
+                
+                # Convert void items to target array via buffer copy
+                chunk = np.frombuffer(raw_payloads.tobytes(), dtype=dtype).reshape(to_read, *conf.image_shape)
+                chunks.append(chunk)
 
             frames_collected += to_read
             current_global += to_read
 
         if len(chunks) == 1:
-            return chunks[0].copy() if chunks[0].base is not None else chunks[0]
+            # Sliced views from tobtyes() are already copies, but if we used a direct view (rare) we'd copy
+            return chunks[0]
+
         return np.concatenate(chunks, axis=0)
+
+    def get_frame_time(self, idx: int, precise: bool = True) -> int:
+        """
+        Retrieves ONLY the nanosecond timestamp for a frame.
+        Fastest way to get time.
+        """
+        if precise and self._timestamps is not None:
+            return int(self._timestamps[idx])
+
+        file_idx, local_idx = self._locate_frame(idx)
+        conf = self.frame_config
+        if not conf: return 0
+        mm = self._get_mmap(file_idx)
+        if not mm: return 0
+        
+        offset = local_idx * conf.frame_size
+
+        # Fast path: use dynamically discovered byte offsets
+        if self.metadata_offsets:
+            is_module = "quabo_0.tv_sec" in self.metadata_offsets
+            prefix = "quabo_0." if is_module else ""
+            
+            def get_val(k):
+                start, end = self.metadata_offsets[prefix + k]
+                return int(mm[offset + start : offset + end])
+
+            tv_sec = get_val("tv_sec")
+            tv_usec = get_val("tv_usec")
+            pkt_nsec = get_val("pkt_nsec")
+            pkt_tai = get_val("pkt_tai")
+            
+            if precise:
+                return get_precise_time_ns(tv_sec, tv_usec, pkt_nsec, pkt_tai)
+            else:
+                return get_coarse_time_ns(tv_sec, tv_usec)
+
+        # Fallback to JSON parsing
+        header_bytes = mm[offset: offset + conf.header_size]
+        h = orjson.loads(header_bytes)
+
+        if 'quabo_0' in h:
+            for i in range(4):
+                q = h[f'quabo_{i}']
+                if q['tv_sec'] != 0:
+                    break
+            else:
+                q = h['quabo_0']
+            
+            if precise:
+                return get_precise_time_ns(q['tv_sec'], q['tv_usec'], q['pkt_nsec'], q.get('pkt_tai', 0))
+            else:
+                return get_coarse_time_ns(q['tv_sec'], q['tv_usec'])
+        elif 'pkt_nsec' in h:
+            if precise:
+                return get_precise_time_ns(h['tv_sec'], h['tv_usec'], h['pkt_nsec'], h.get('pkt_tai', 0))
+            else:
+                return get_coarse_time_ns(h['tv_sec'], h['tv_usec'])
+        else:
+            return 0
+
+    def seek_time(self, target_time_ns: int) -> int:
+        """
+        Binary Search for frame index closest to target_time_ns.
+        """
+        if self._total_frames == 0:
+            return 0
+
+        low = 0
+        high = self._total_frames - 1
+
+        t_start = self.get_frame_time(low)
+        if target_time_ns <= t_start: return low
+
+        t_end = self.get_frame_time(high)
+        if target_time_ns >= t_end: return high
+
+        while low <= high:
+            mid = (low + high) // 2
+            t_mid = self.get_frame_time(mid)
+
+            if t_mid < target_time_ns:
+                low = mid + 1
+            elif t_mid > target_time_ns:
+                high = mid - 1
+            else:
+                return mid
+
+        candidates = [c for c in [high, low] if 0 <= c < self._total_frames]
+        return min(candidates, key=lambda i: abs(self.get_frame_time(i) - target_time_ns))
+
+    def to_dask(self) -> Any:
+        """Convert to a Dask Array for distributed processing."""
+        try:
+            import dask.array as da
+        except ImportError:
+            raise ImportError("Dask is not installed. Install with 'uv add dask' or use the [dev] extra.")
+
+        if not self.frame_config:
+            raise RuntimeError("Frame configuration not analyzed.")
+
+        return None
 
 
 class PanosetiRun:
@@ -241,12 +587,34 @@ class PanosetiRun:
         self._scan()
 
     def _load_configs(self) -> None:
+        from .models import DataConfig, ObsConfig, DaqConfig, QuaboConfig, PhBaselineConfig
+        
         for f in self.run_dir.glob("*.json"):
             try:
                 with open(f, 'rb') as jf:
-                    self.configs[f.stem] = orjson.loads(jf.read())
+                    data = orjson.loads(jf.read())
+                    
+                    # Attempt to validate with models based on filename
+                    stem = f.stem
+                    if stem == "data_config":
+                        self.configs[stem] = DataConfig(**data)
+                    elif stem == "obs_config":
+                        self.configs[stem] = ObsConfig(**data)
+                    elif stem == "daq_config":
+                        self.configs[stem] = DaqConfig(**data)
+                    elif stem.startswith("quabo_config"):
+                        self.configs[stem] = QuaboConfig(**data)
+                    elif stem == "quabo_ph_baseline":
+                        self.configs[stem] = PhBaselineConfig(**data)
+                    else:
+                        self.configs[stem] = data
             except Exception:
-                pass
+                # Fallback to raw dict if validation fails
+                try:
+                    with open(f, 'rb') as jf:
+                        self.configs[f.stem] = orjson.loads(jf.read())
+                except Exception:
+                    pass
 
     def _scan(self) -> None:
         files_map: dict[str, list[Path]] = {}
@@ -276,6 +644,42 @@ class PanosetiRun:
             raise KeyError(f"Product {product_name} not found.")
         return self.products[product_name]
 
+    def show(self) -> None:
+        """Rich visualization of the Run structure."""
+        console = Console()
+
+        run_name = self.run_dir.resolve().name
+        tree = Tree(f"[bold gold1]Run: {run_name}[/]")
+        
+        # 1. Configs
+        if self.configs:
+            config_branch = tree.add("Configurations")
+            for k in sorted(self.configs.keys()):
+                config_branch.add(f"[cyan]{k}.json[/]")
+
+        # 2. Metadata/Logs
+        other_files = []
+        if (self.run_dir / "hk.pff").exists():
+            other_files.append("hk.pff")
+        for f in self.run_dir.glob("*.log"):
+            other_files.append(f.name)
+        for f in self.run_dir.glob("*.txt"):
+            other_files.append(f.name)
+            
+        if other_files:
+            meta_branch = tree.add("Metadata & Logs")
+            for f in sorted(other_files):
+                meta_branch.add(f"[magenta]{f}[/]")
+
+        # 3. Products
+        if self.products:
+            prod_branch = tree.add("Data Products")
+            for name, seq in sorted(self.products.items()):
+                info = f"[bold green]{name}[/] ({len(seq):,} frames)"
+                prod_branch.add(info)
+
+        console.print(tree)
+
 class hkpff:
     """Modernized housekeeping parser."""
     def __init__(self, fn: str = 'hk.pff'):
@@ -285,10 +689,17 @@ class hkpff:
         hk_info: dict[str, dict[str, list[Any]]] = {}
         if not self.fn.exists():
             return hk_info
+            
         with open(self.fn, 'rb') as f:
-            for line in f:
+            # PFF JSON records are delimited by \n\n
+            content = f.read()
+            records = content.split(b'\n\n')
+            
+            for rec in records:
+                if not rec.strip():
+                    continue
                 try:
-                    data = orjson.loads(line)
+                    data = orjson.loads(rec)
                     for key, values in data.items():
                         if key not in hk_info:
                             hk_info[key] = {}

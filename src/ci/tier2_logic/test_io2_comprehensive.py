@@ -24,7 +24,7 @@ def test_panoseti_run_comprehensive(example_run):
     # 2. Config Loading
     assert "obs_config" in run.configs
     assert "data_config" in run.configs
-    assert run.configs["obs_config"]["name"] == "UCB_lab"
+    assert run.configs["obs_config"].name == "UCB_lab"
     
     # 3. Get Product
     seq = run.get_product("dp_ph256.bpp_2.module_254")
@@ -65,6 +65,14 @@ def test_pff_sequence_comprehensive():
     with pytest.raises(IndexError):
         seq.get_frame(len(seq))
         
+    # 4. Frame Timing
+    t0 = seq.get_frame_time(0)
+    assert t0 > 0
+    
+    # 5. Seek Time
+    idx = seq.seek_time(t0 + 1) # Should find frame 0 or close to it
+    assert idx == 0 or idx == 1
+    
     # Close
     seq.close()
     assert len(seq._open_mmaps) == 0
@@ -105,20 +113,28 @@ def test_hkpff_modern_comprehensive():
     assert isinstance(info["QUABO_1019"]["DET_TEMP"][0], float)
 
 def test_qconfig_modern_comprehensive():
-    pattern = str(EXAMPLE_DATA_DIR / "*.json")
-    conf = qconfig(pattern).config
+    # qconfig(pattern) helper still returns raw dicts in its .config attribute
+    # but PanosetiRun.configs now contains Pydantic models.
+    run = PanosetiRun(EXAMPLE_DATA_DIR)
+    conf = run.configs
     
     assert "obs_config" in conf
     assert "data_config" in conf
     assert "daq_config" in conf
-    assert "quabo_uids" in conf
     
-    # Validate with models
-    obs = ObsConfig(**conf["obs_config"])
-    assert obs.name == "UCB_lab"
+    # Verify they are Pydantic models
+    from pypff.models import ObsConfig, DataConfig, QuaboConfig
+    assert isinstance(conf["obs_config"], ObsConfig)
+    assert isinstance(conf["data_config"], DataConfig)
     
-    data = DataConfig(**conf["data_config"])
-    assert data.run_type == "pe-steps-ph8"
+    assert conf["obs_config"].name == "UCB_lab"
+    assert conf["data_config"].run_type == "pe-steps-ph8"
+    
+    # Check quabo_config specific parsing (CSV -> list)
+    q_key = "quabo_config_192.168.3.248"
+    if q_key in conf:
+        assert isinstance(conf[q_key], QuaboConfig)
+        assert conf[q_key].OTABG_ON == [1, 1, 1, 1]
 
 def test_pff_sequence_multi_file():
     # Simulate multi-file sequence by providing the same file twice

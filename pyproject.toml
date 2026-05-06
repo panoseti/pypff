@@ -31,6 +31,8 @@ dependencies = [
     "astropy",
     "scipy",
     "matplotlib",
+    "plotly",
+    "tqdm",
 ]
 
 [project.optional-dependencies]
