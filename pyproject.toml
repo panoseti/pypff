@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pypff"
-version = "1.0.0"
+version = "1.1.0"
 description = "Modernized PFF I/O library for PanoSETI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -50,3 +50,44 @@ where = ["src"]
 
 [project.scripts]
 pypff = "pypff.cli:app"
+
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "UP", "B", "I", "ASYNC", "RUF", "SIM"]
+ignore = [
+    "E501",   # line too long – handled separately
+    "B008",   # function calls in default args (common in Pydantic)
+    "F841",   # unused variables
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = [
+	"E501",
+	"E402",
+	"F401"
+] # Add rule codes you want to ignore here
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+python_version = "3.14"
+# exclude = ["ci"]
+
+strict = true
+check_untyped_defs = true
+strict_equality = true
+extra_checks = true
+ignore_missing_imports = true
+warn_return_any = false
+disallow_untyped_defs = true
+disallow_incomplete_defs = false
+warn_unused_ignores = false
+warn_unreachable = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
