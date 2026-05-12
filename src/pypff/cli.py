@@ -1,32 +1,53 @@
-import typer
-from typing import Optional
-import subprocess
+from __future__ import annotations
+
 import os
+from typing import Annotated, Any
 
-app = typer.Typer(help="Pypff Management CLI")
+import typer
 
-@app.command()
-def test(
-    tier: str = typer.Argument("all", help="Test tier to run: unit, logic, legacy, or all"),
-    lint: bool = typer.Option(False, "--lint", help="Run linters (Ruff/MyPy)"),
-):
-    """Run pypff test suite."""
-    if lint:
-        print("Running linters...")
-        subprocess.run(["ruff", "check", "."], check=True)
-        subprocess.run(["mypy", "src"], check=True)
+# Local Imports
+from .util.cli import BaseLazyGroup, display_tree_callback
 
-    if tier == "unit" or tier == "all":
-        print("Running Tier 1 (Unit) tests...")
-        subprocess.run(["pytest", "src/ci/tier1_unit"], check=True)
 
-    if tier == "logic" or tier == "all":
-        print("Running Tier 2 (Logic) tests...")
-        subprocess.run(["pytest", "src/ci/tier2_logic"], check=True)
+class PypffLazyGroup(BaseLazyGroup):
+    """
+    Custom Click Group that lazy-loads commands from other modules.
+    Ensures that heavy dependencies (like NumPy or Rich) aren't loaded
+    until a specific command is actually executed.
+    """
 
-    if tier == "legacy" or tier == "all":
-        print("Running Legacy Integration tests...")
-        subprocess.run(["pytest", "src/ci/legacy_tests"], check=True)
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        lazy_mapping = {
+            "show": ("pypff._cli.root", "show", "Explore the structure of a PanoSETI run."),
+            "test": ("pypff._cli.test", "app", "Run pypff test suite."),
+        }
+        super().__init__(*args, lazy_mapping=lazy_mapping, **kwargs)
+
+
+app = typer.Typer(
+    cls=PypffLazyGroup,
+    help="Pypff Management CLI",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    tree: Annotated[
+        bool,
+        typer.Option(
+            "--tree",
+            "-t",
+            help="Display the command tree and exit.",
+            callback=display_tree_callback,
+        ),
+    ] = False,
+) -> None:
+    """PYPFF I/O CLI."""
+    if ctx.invoked_subcommand is None and not tree:
+        print(ctx.get_help())
+
 
 if __name__ == "__main__":
     app()
