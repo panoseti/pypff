@@ -701,8 +701,12 @@ class PanosetiRun:
                     }
         return entries
 
-    def show(self) -> None:
-        """Rich visualization of the Run structure."""
+    def show(self, details: bool = False) -> None:
+        """Rich visualization of the Run structure.
+        
+        Args:
+            details: If True, list individual PFF files within each product.
+        """
         console = Console()
 
         run_name = self.run_dir.resolve().name
@@ -742,7 +746,10 @@ class PanosetiRun:
             prod_branch = tree.add("Data Products")
             for name, seq in sorted(self.products.items()):
                 info = f"[bold green]{name}[/] ({len(seq):,} frames)"
-                prod_branch.add(info)
+                b = prod_branch.add(info)
+                if details:
+                    for f in seq.file_paths:
+                        b.add(f"[dim]{f.name} ({f.stat().st_size / 1024 / 1024:.1f} MB)[/]")
         
         # 5. Housekeeping
         if (self.run_dir / "hk.pff").exists():
