@@ -583,12 +583,14 @@ class PanosetiRun:
         self.run_dir = Path(run_dir)
         self.products: dict[str, PFFSequence] = {}
         self.configs: dict[str, Any] = {}
+        self.metadata: dict[str, Any] = {}
         self._load_configs()
         self._scan()
 
     def _load_configs(self) -> None:
         from .models import DataConfig, ObsConfig, DaqConfig, QuaboConfig, PhBaselineConfig
         
+        # 1. JSON files
         for f in self.run_dir.glob("*.json"):
             try:
                 with open(f, 'rb') as jf:
@@ -615,6 +617,23 @@ class PanosetiRun:
                         self.configs[f.stem] = orjson.loads(jf.read())
                 except Exception:
                     pass
+
+        # 2. TOML files
+        for f in self.run_dir.glob("*.toml"):
+            try:
+                with open(f, "rb") as tf:
+                    self.configs[f.stem] = tomllib.load(tf)
+            except Exception:
+                pass
+
+        # 3. JSONL files (like hp_stdout.jsonl)
+        for f in self.run_dir.glob("*.jsonl"):
+            try:
+                with open(f, "rb") as jlf:
+                    lines = jlf.readlines()
+                    self.metadata[f.name] = [orjson.loads(line) for line in lines if line.strip()]
+            except Exception:
+                pass
 
     def _scan(self) -> None:
         files_map: dict[str, list[Path]] = {}
@@ -644,6 +663,44 @@ class PanosetiRun:
             raise KeyError(f"Product {product_name} not found.")
         return self.products[product_name]
 
+    def list_logs(self) -> list[str]:
+        """List all log files in the run directory."""
+        logs = []
+        for ext in ["*.log", "*.txt"]:
+            logs.extend([f.name for f in self.run_dir.glob(ext)])
+        return sorted(logs)
+
+    def get_log(self, name: str) -> str:
+        """Read and return the content of a log file."""
+        log_path = self.run_dir / name
+        if not log_path.exists():
+            raise FileNotFoundError(f"Log file {name} not found.")
+        return log_path.read_text()
+
+    def get_manifest(self) -> dict[str, dict[str, Any]]:
+        """Parse the manifest file and return a dictionary of entries."""
+        manifest_files = list(self.run_dir.glob("dp_manifest.*.txt"))
+        if not manifest_files:
+            return {}
+        
+        # Take the first one (usually only one per node)
+        m_file = manifest_files[0]
+        entries = {}
+        with open(m_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split("  ", 3)
+                if len(parts) == 4:
+                    digest, size, mtime, relpath = parts
+                    entries[relpath] = {
+                        "digest": digest,
+                        "size": int(size),
+                        "mtime": int(mtime)
+                    }
+        return entries
+
     def show(self) -> None:
         """Rich visualization of the Run structure."""
         console = Console()
@@ -651,32 +708,46 @@ class PanosetiRun:
         run_name = self.run_dir.resolve().name
         tree = Tree(f"[bold gold1]Run: {run_name}[/]")
         
-        # 1. Configs
-        if self.configs:
-            config_branch = tree.add("Configurations")
+        # 1. Configs & Metadata
+        if self.configs or self.metadata:
+            config_branch = tree.add("Configurations & Metadata")
             for k in sorted(self.configs.keys()):
-                config_branch.add(f"[cyan]{k}.json[/]")
-
-        # 2. Metadata/Logs
-        other_files = []
-        if (self.run_dir / "hk.pff").exists():
-            other_files.append("hk.pff")
-        for f in self.run_dir.glob("*.log"):
-            other_files.append(f.name)
-        for f in self.run_dir.glob("*.txt"):
-            other_files.append(f.name)
+                # Distinguish by extension
+                if (self.run_dir / f"{k}.json").exists():
+                    config_branch.add(f"[cyan]{k}.json[/]")
+                elif (self.run_dir / f"{k}.toml").exists():
+                    config_branch.add(f"[yellow]{k}.toml[/]")
+                else:
+                    config_branch.add(f"[cyan]{k}[/]")
             
-        if other_files:
-            meta_branch = tree.add("Metadata & Logs")
-            for f in sorted(other_files):
-                meta_branch.add(f"[magenta]{f}[/]")
+            for k in sorted(self.metadata.keys()):
+                config_branch.add(f"[blue]{k}[/]")
 
-        # 3. Products
+        # 2. Logs
+        logs = self.list_logs()
+        if logs:
+            log_branch = tree.add("Logs")
+            for l in logs:
+                log_branch.add(f"[magenta]{l}[/]")
+
+        # 3. Manifests
+        manifests = list(self.run_dir.glob("dp_manifest.*.txt"))
+        if manifests:
+            manifest_branch = tree.add("Data Manifests")
+            for m in manifests:
+                manifest_branch.add(f"[green]{m.name}[/]")
+
+        # 4. Products
         if self.products:
             prod_branch = tree.add("Data Products")
             for name, seq in sorted(self.products.items()):
                 info = f"[bold green]{name}[/] ({len(seq):,} frames)"
                 prod_branch.add(info)
+        
+        # 5. Housekeeping
+        if (self.run_dir / "hk.pff").exists():
+            hk_size = (self.run_dir / "hk.pff").stat().st_size
+            tree.add(f"[bold white]Housekeeping:[/] hk.pff ({hk_size} bytes)")
 
         console.print(tree)
 
