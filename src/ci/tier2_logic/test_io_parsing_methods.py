@@ -19,7 +19,7 @@ def test_parsing_methods_ph256():
     
     # 2. Modern IO2 Vectorized
     seq = PFFSequence([ph256_file])
-    mod_vec_data = seq.get_image_array()
+    mod_vec_data = seq.read_images_range(0)
     mod_vec_meta = seq.get_all_metadata()
     
     # 3. Modern IO2 Naive Iteration
@@ -61,7 +61,7 @@ def test_parsing_methods_img16():
     
     # 2. Modern IO2 Vectorized
     seq = PFFSequence([img16_file])
-    mod_vec_data = seq.get_image_array()
+    mod_vec_data = seq.read_images_range(0)
     mod_vec_meta = seq.get_all_metadata()
     
     # 3. Modern IO2 Naive Iteration

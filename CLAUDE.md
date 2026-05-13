@@ -39,11 +39,15 @@ uv run mypy src
 **Legacy layer (`src/pypff/io.py`):** Original byte-offset based reader. Uses hardcoded byte positions (`loc_arr`) to extract metadata fields from fixed-format PFF JSON headers. Exposes `datapff`, `hkpff`, `qconfig`. Kept for backward compatibility.
 
 **Modern layer (`src/pypff/io2.py`):** `PFFSequence` and `PanosetiRun` — the primary API. `PFFSequence` wraps one or more sequential `.pff` files for a single data product, providing:
-- `mmap`-based zero-copy frame access
-- Standard Python slicing (`seq[0:100:10]`) returning NumPy arrays
-- Pickle-safe multiprocessing (file handles dropped on `__getstate__`, lazily reopened)
-- Nanosecond-precision `seek_time()` for timestamp-based navigation
-- `get_all_metadata()` for bulk header extraction
+- Streaming-by-default API: `for img in seq` and `for batch in seq.iter_batches(size=256)` are zero-copy within a single file.
+- `iter_byte_range(file_idx, byte_start, byte_end, batch_size)` for distributed chunked reads (Nextflow/Dask workers).
+- `read_images(indices)` for sorted-with-inverse-permutation random access; `read_images_range(start, count)` for sequential bulk.
+- `seq[i]` returns a zero-copy view; `seq[start:stop:step]` uses `read_images`.
+- Single-pass metadata extraction via NumPy composite structured dtype (`get_metadata_arrays`). Supports virtual `unix_t_ns` key.
+- `timestamps(indices=None)` returns cached `int64` ns array; `timestamps(as_datetime=True)` returns a zero-copy `datetime64[ns]` view for matplotlib/pandas. `timestamp_at(i)` and `seek_time(ns)` use a two-level binary search (file bounds, then within-file).
+- LRU-bounded mmap handles (`_MmapLRU`, default capacity 16). `PFFSequence` is a context manager.
+- Pickle-safe for multiprocessing (handles dropped on `__getstate__`, lazily reopened).
+- `get_frame(i)` returns `(dict, ndarray_view)` by default; `get_frame_validated(i)` returns `(QuaboHeader|ModuleHeader, ndarray_view)`.
 
 `PanosetiRun` is a lazy-loaded directory scanner over a `.pffd` run directory. It discovers and groups `.pff` files by data product and exposes typed config loading via Pydantic models.
 
@@ -53,7 +57,22 @@ Pydantic v2 models validate all PFF headers and PANOSETI config JSON files. `Bas
 
 ### Timing
 
-All timestamps are **nanosecond integers** (not floats) to avoid floating-point precision loss. `utils.get_precise_time_ns()` reconciles `tv_sec`/`tv_usec` (system clock) against `pkt_nsec`/`pkt_tai` (quabo hardware clock) using 10-bit TAI counter wraparound logic.
+All timestamps are **`int64` nanoseconds since the Unix epoch** — never Python floats. Float64 has only ~15–16 significant digits; a Unix timestamp in nanoseconds is ~19 digits, so `float(ns) / 1e9` loses nanosecond precision at the point of division.
+
+- `timestamps()` → `np.ndarray[int64]` — for arithmetic, diffs, and storage.
+- `timestamps(as_datetime=True)` → `np.ndarray[datetime64[ns]]` — zero-copy view of the same `int64` data; natively understood by matplotlib date axes, pandas, and xarray. Use for display only.
+- `timestamp_at(i)` → `int` — single frame, nanoseconds.
+
+**Integer-space epoch rule:** when converting to float seconds for plotting, subtract the reference epoch first in integer space, then divide — the resulting relative values are small so float64 retains sub-nanosecond resolution:
+```python
+# CORRECT — subtract first (int64), then divide (small values, no precision loss)
+rel_s = (times_ns - t0_ns) / 1e9
+
+# WRONG — 1.7e18 ÷ 1e9 ≈ 1.7e9 s, only ~6 decimal digits remain after the decimal
+times_ns / 1e9 - t0_s
+```
+
+`utils.get_precise_time_ns()` reconciles `tv_sec`/`tv_usec` (system clock) against `pkt_nsec`/`pkt_tai` (quabo hardware clock) using 10-bit TAI counter wraparound logic.
 
 ### Pixel Maps
 

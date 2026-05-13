@@ -67,8 +67,8 @@ def test_pffsequence_multiprocessing(dummy_run):
 def test_pffsequence_timing_and_seek(dummy_run):
     files = sorted(list(dummy_run.glob("*.pff")))
     seq = PFFSequence(files)
-    t0 = seq.get_frame_time(0)
-    t1 = seq.get_frame_time(1)
+    t0 = seq.timestamp_at(0)
+    t1 = seq.timestamp_at(1)
     assert t1 > t0
     idx = seq.seek_time(t0 + 500)
     assert idx in [0, 1]
@@ -83,5 +83,5 @@ def test_pffsequence_stress_many_files(tmp_path):
     files = sorted(list(run_dir.glob("*.pff")), key=lambda x: int(x.name.split('seqno_')[1].split('.')[0]))
     seq = PFFSequence(files)
     indices = np.random.choice(len(seq), 20, replace=False)
-    imgs = seq.get_image_array(indices=indices)
+    imgs = seq.read_images(indices)
     assert imgs.shape == (20, 32, 32)

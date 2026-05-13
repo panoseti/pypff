@@ -1,7 +1,6 @@
 import pytest
 from pathlib import Path
-from pypff.io2 import PanosetiRun, PFFSequence
-from pypff.io import hkpff
+from pypff.io2 import PanosetiRun, PFFSequence, hkpff
 import numpy as np
 
 EXAMPLE_DATA_DIR = Path(__file__).parents[3] / "example" / "example-data"
@@ -28,7 +27,7 @@ def test_pff_sequence_ph256():
     
     assert img.shape == (16, 16)
     assert img.dtype == np.int16
-    assert hasattr(header, "pkt_num")
+    assert "pkt_num" in header  # get_frame returns a dict by default
 
 def test_pff_sequence_img16():
     if not EXAMPLE_DATA_DIR.exists():
@@ -63,6 +62,6 @@ def test_get_image_array():
     seq = PFFSequence([ph256_file])
     
     # Read first 5 frames as a stacked array
-    arr = seq.get_image_array(start=0, count=5)
+    arr = seq.read_images_range(0, 5)
     assert arr.shape == (5, 16, 16)
     assert arr.dtype == np.int16

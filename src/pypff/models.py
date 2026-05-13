@@ -1,16 +1,15 @@
 """
 models.py
 
-Centralized Pydantic models for validating PANOSETI configuration files, 
+Centralized Pydantic models for validating PANOSETI configuration files,
 PFF headers, and calibration data.
 """
 
 from __future__ import annotations
 
+import functools
 import re
-from datetime import datetime
-from enum import StrEnum, unique
-from typing import Any, Literal, Union, Optional
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import (
@@ -27,7 +26,7 @@ from .utils import get_precise_time_ns
 
 # Global restrictions
 MAX_RUN_TYPE_LENGTH = 14
-INVALID_RUN_TYPE_CHARS = [".", "_", " ", ]
+INVALID_RUN_TYPE_CHARS = [".", "_", " "]
 
 MIN_PULSE_HEIGHT_PE_THRESHOLD = 2.0
 MIN_MOVIE_MODE_PE_THRESHOLD = 1.0
@@ -38,8 +37,8 @@ MIN_MOVIE_MODE_PE_THRESHOLD = 1.0
 # ---------------------------
 
 class BaseStrictModel(BaseModel):
-    """Disallows extra fields to catch typos in configuration keys."""
-    model_config = ConfigDict(extra='forbid')
+    """Disallows extra fields and mutations to catch typos in configuration keys."""
+    model_config = ConfigDict(extra='forbid', frozen=True)
 
 
 # ---------------------------
@@ -74,7 +73,6 @@ class ModuleHeader(BaseStrictModel):
 
     @property
     def timestamp_ns(self) -> int:
-        # Use first non-zero quabo for timing
         for i in range(4):
             q = getattr(self, f"quabo_{i}")
             if q.tv_sec != 0:
@@ -91,7 +89,7 @@ class FrameConfig(BaseStrictModel):
     bytes_per_pixel: int
     format_name: str
 
-    @property
+    @functools.cached_property
     def dtype(self) -> np.dtype:
         return np.dtype(self.dtype_str)
 
@@ -103,6 +101,7 @@ class FrameConfig(BaseStrictModel):
 class AnyTriggerConfig(BaseStrictModel):
     """Configuration for 'any_trigger' mode in pulse height acquisition."""
     group_ph_frames: int = Field(0, description="If set to 1, hashpipe will group 4 packets from 4 quabos.")
+
 
 class PulseHeightMode(BaseStrictModel):
     """Parameters for Pulse Height (PH) data acquisition."""
@@ -124,10 +123,12 @@ class ImageMode(BaseStrictModel):
             raise ValueError(f"integration_time_usec ({v}) must evenly divide 1,000,000 usec.")
         return v
 
+
 class LongPulseMode(BaseStrictModel):
     """Parameters for long-pulse event detection."""
     octaves: int
     threshold_sigma: list[float]
+
 
 class FlashParams(BaseStrictModel):
     """Controls for the onboard LED flash system."""
@@ -135,11 +136,13 @@ class FlashParams(BaseStrictModel):
     level: int = Field(..., ge=0, le=31, description="Controls DC supply level (0-31)")
     width: int = Field(..., ge=0, le=15, description="Controls pulse width (0-15)")
 
+
 class StimParams(BaseStrictModel):
     """Controls for the electronic stimulus (test pulse) system."""
     rate: int = Field(..., ge=0, le=7, description="Rate from 190 to 24,400 Hz")
     level: int = Field(..., ge=0, le=255)
     mask: list[bool] = Field(..., max_length=4, min_length=4)
+
 
 class InterleaveState(BaseStrictModel):
     """A single state in an interleaved observing sequence."""
@@ -154,10 +157,12 @@ class InterleaveState(BaseStrictModel):
             raise ValueError(f"State '{self.state_name}' must have at least one valid mode (movie or pulse_height).")
         return self
 
+
 class InterleaveConfig(BaseStrictModel):
     """Full configuration for cyclical interleaved observing."""
     enable: bool = Field(False)
     states: list[InterleaveState] = Field([])
+
 
 class DataConfig(BaseModel):
     """Science and engineering acquisition parameters (data_config.json)."""
@@ -182,29 +187,22 @@ class DataConfig(BaseModel):
         return v
 
     @model_validator(mode='after')
-    def validate_dynamic_modes_and_interleave(self) -> DataConfig:
-        dynamic_keys: list[str] = []
-        ph_modes_dict: dict[str, PulseHeightMode] = {}
-
-        if self.pulse_height:
-            ph_modes_dict['pulse_height'] = self.pulse_height
-
-        if self.model_extra:
-            for key, val in self.model_extra.items():
-                if key.startswith('image_'):
-                    try:
-                        ImageMode(**val)
-                        dynamic_keys.append(key)
-                    except ValidationError as e:
-                        raise ValueError(f"Invalid fields in dynamic mode '{key}': {e}") from e
-                elif key.startswith('pulse_height_'):
-                    try:
-                        ph_obj = PulseHeightMode(**val)
-                        ph_modes_dict[key] = ph_obj
-                        dynamic_keys.append(key)
-                    except ValidationError as e:
-                        raise ValueError(f"Invalid fields in dynamic mode '{key}': {e}") from e
+    def validate_dynamic_modes(self) -> DataConfig:
+        if not self.model_extra:
+            return self
+        for key, val in self.model_extra.items():
+            if key.startswith('image_'):
+                try:
+                    ImageMode(**val)
+                except ValidationError as e:
+                    raise ValueError(f"Invalid fields in dynamic mode '{key}': {e}") from e
+            elif key.startswith('pulse_height_'):
+                try:
+                    PulseHeightMode(**val)
+                except ValidationError as e:
+                    raise ValueError(f"Invalid fields in dynamic mode '{key}': {e}") from e
         return self
+
 
 # -------------------------
 # --- Obs Config Models ---
@@ -220,7 +218,7 @@ class ObsModuleConfig(BaseModel):
     """Configuration and state for a single observatory module."""
     model_config = ConfigDict(extra='allow')
     mobo_serialno: str
-    quabo_version: Union[str, list[str]]
+    quabo_version: str | list[str]
     ip_addr: IPvAnyAddress
     wps: str | None = None
     ups: str | None = None
@@ -247,7 +245,7 @@ class ObsConfig(BaseModel):
     """Physical observatory setup and device mapping (obs_config.json)."""
     name: str
     comment: str | None = None
-    wr_ip_addr: IPvAnyAddress | None = IPvAnyAddress("192.168.1.254") # type: ignore
+    wr_ip_addr: IPvAnyAddress | None = IPvAnyAddress("192.168.1.254")  # type: ignore
     dome_controller_ip_addr: IPvAnyAddress | None = None
     gps_port: str | None = Field("/dev/ttyUSB0")
     detector_overvoltage: int | None = None
@@ -266,6 +264,7 @@ class ObsConfig(BaseModel):
                     raise ValueError(f"Invalid format for '{key}': {e}") from e
         return self
 
+
 # -------------------------
 # --- DAQ Config Models ---
 # -------------------------
@@ -274,8 +273,8 @@ class PortForwarding(BaseStrictModel):
     """Networking metadata for port-forwarded devices (Gateways)."""
     status: bool = Field(False)
     gw_ip: IPvAnyAddress
-    reboot_port: Optional[list[Optional[int]]] = Field(None)
-    cmd_port: Optional[list[Optional[int]]] = Field(None)
+    reboot_port: list[int | None] | None = Field(None)
+    cmd_port: list[int | None] | None = Field(None)
     port: int | None = None
     grpc_port: int = Field(50051, ge=1, le=65535)
 
@@ -286,7 +285,7 @@ class DaqNode(BaseModel):
     username: str
     data_dir: str
     ip_addr: IPvAnyAddress
-    module_ids: Union[list[int], str, int]
+    module_ids: list[int] | str | int
     bindhost: str | None = Field("0.0.0.0")
     port_forwarding: PortForwarding | None = None
 
@@ -325,9 +324,11 @@ class NetworkModule(BaseStrictModel):
     ip_addr: IPvAnyAddress
     port_forwarding: PortForwarding
 
+
 class NetworkDaqNode(BaseStrictModel):
     ip_addr: IPvAnyAddress
     port_forwarding: PortForwarding
+
 
 class NetworkConfig(BaseStrictModel):
     modules: list[NetworkModule] = Field(default_factory=list)
@@ -341,9 +342,10 @@ class NetworkConfig(BaseStrictModel):
 class Daemons(BaseModel):
     model_config = ConfigDict(extra='allow')
 
+
 class DaemonConfig(BaseStrictModel):
     daemons: Daemons
-    permanent_daemons: Optional[Daemons] = None
+    permanent_daemons: Daemons | None = None
 
 
 # ------------------------------
@@ -364,13 +366,16 @@ class FirmwareConfig(BaseModel):
 class QuaboUidEntry(BaseStrictModel):
     uid: str
 
+
 class QuaboUidModule(BaseModel):
     model_config = ConfigDict(extra='allow')
     ip_addr: IPvAnyAddress
     quabos: list[QuaboUidEntry] = Field(..., min_length=4, max_length=4)
 
+
 class QuaboUidDome(BaseStrictModel):
     modules: list[QuaboUidModule]
+
 
 class QuaboUids(BaseStrictModel):
     domes: list[QuaboUidDome]
@@ -393,15 +398,14 @@ def parse_csv_ints(v: Any) -> list[int]:
         return res
     return v
 
+
 class QuaboConfig(BaseModel):
     """Internal register settings for a Quabo board (quabo_config_IP.json)."""
     model_config = ConfigDict(extra='allow')
 
-    # Example fields found in quabo_config files
-    DAC1: Optional[Union[str, list[int]]] = None
-    DAC2: Optional[Union[str, list[int]]] = None
-    GAIN0: Optional[Union[str, list[int]]] = None
-    # ... many more exist, extra='allow' covers them.
+    DAC1: str | list[int] | None = None
+    DAC2: str | list[int] | None = None
+    GAIN0: str | list[int] | None = None
 
     @model_validator(mode='before')
     @classmethod
@@ -426,6 +430,7 @@ class QuaboPhBaseline(BaseStrictModel):
     """Pulse height baseline calibration for a single Quabo."""
     uid: str
     coefs: list[int] = Field(..., min_length=256, max_length=256)
+
 
 class PhBaselineConfig(BaseStrictModel):
     """Pulse Height (PH) baseline calibration registry."""
