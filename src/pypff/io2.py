@@ -460,6 +460,7 @@ class PanosetiRun:
         self._configs: Optional[dict[str, Any]] = None
         self._metadata: Optional[dict[str, list[dict]]] = None
         self._hk_data: Optional[dict[str, dict[str, list[Any]]]] = None
+        self._manifests: Optional[dict[str, str]] = None
         
         self._scan_products()
 
@@ -496,6 +497,11 @@ class PanosetiRun:
         if self._metadata is None: self._load_metadata()
         return self._metadata
 
+    @property
+    def manifests(self) -> dict[str, str]:
+        if self._manifests is None: self._load_manifests()
+        return self._manifests
+
     # --- Configurations ---
     def _load_configs(self) -> None:
         from .models import (
@@ -516,6 +522,7 @@ class PanosetiRun:
         }
 
         for f in self.run_dir.glob("*.json"):
+            if f.name.startswith("dp_manifest"): continue
             try:
                 data = orjson.loads(f.read_bytes())
                 model = models_map.get(f.stem) or (QuaboConfig if f.stem.startswith("quabo_config") else None)
@@ -542,6 +549,17 @@ class PanosetiRun:
 
     def get_metadata_log(self, name: str) -> list[dict]:
         return self.metadata.get(name, [])
+
+    # --- Manifests ---
+    def _load_manifests(self) -> None:
+        self._manifests = {}
+        for f in self.run_dir.glob("dp_manifest*"):
+            try:
+                self._manifests[f.name] = f.read_text()
+            except Exception: pass
+
+    def get_manifest(self, name: str) -> str:
+        return self.manifests.get(name, "")
 
     # --- Standard Logs ---
     def list_logs(self) -> list[str]:
@@ -594,18 +612,21 @@ class PanosetiRun:
         tree = Tree(f"[bold gold1]Run: {self.run_dir.resolve().name}[/]")
         
         # Trigger lazy loads to populate tree correctly
-        _ = self.configs; _ = self.metadata
+        _ = self.configs; _ = self.metadata; _ = self.manifests
         
         if self._configs or self._metadata:
             cb = tree.add("Configurations & Metadata")
             for k in sorted(self._configs.keys()): cb.add(f"[cyan]{k}[/]")
             for k in sorted(self._metadata.keys()): cb.add(f"[blue]{k}[/]")
 
+        if self._manifests:
+            mb = tree.add("Data Manifests")
+            for k in sorted(self._manifests.keys()): mb.add(f"[green]{k}[/]")
+
         logs = self.list_logs()
         if logs:
             lb = tree.add("Logs")
             for l in logs: lb.add(f"[magenta]{l}[/]")
-
         if self.products:
             pb = tree.add("Data Products")
             for name, seq in sorted(self.products.items()):
