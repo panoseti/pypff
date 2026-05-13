@@ -91,3 +91,8 @@ warn_unreachable = true
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]
