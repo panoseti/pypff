@@ -4,10 +4,12 @@ A high-performance Python package for reading and analyzing data files generated
 
 ## Features
 - **Zero-Copy Access:** Uses `mmap` for fast, memory-efficient access to large data products without loading the entire file into memory.
-- **Precise Timing:** Implements robust nanosecond-resolution integer arithmetic for GPS/NTP time reconciliation.
-- **Pydantic Validation:** Strict schema validation for PFF headers.
+- **High-Performance Slicing:** Standard Python slicing support (e.g., `seq[0:100:10]`) for rapid image and metadata retrieval.
+- **Multiprocessing Support:** `PFFSequence` objects are pickle-compatible, enabling parallel batch processing and HPC workflows.
+- **Precise Timing & Navigation:** Nanosecond-resolution integer arithmetic for time reconciliation and time-based seeking (`seek_time`).
+- **Pydantic Validation:** Strict schema validation for all PanoSETI configuration types and PFF headers.
 - **Virtual Concatenation:** Access a sequence of PFF files as a single, contiguous stream via `PFFSequence`.
-- **Run Discovery:** Easily scan and list data products in an observing run directory using `PanosetiRun`.
+- **Run Discovery:** Comprehensive `PanosetiRun` interface for lazy-loaded access to telemetry, configs, and data products.
 
 ## Installation
 The package uses `uv` for dependency management.
@@ -19,7 +21,7 @@ uv sync
 
 ## Quick Start
 
-### discovery with PanosetiRun
+### Discovery with PanosetiRun
 ```python
 from pypff import PanosetiRun
 
@@ -31,21 +33,46 @@ print(run.list_products())
 # ['dp_img16.bpp_2.module_1', 'dp_ph256.bpp_2.module_254', ...]
 
 # Get a specific product sequence
-seq = run.get_product("dp_ph256.bpp_2.module_254")
+seq = run.get_product("dp_img16.bpp_2.module_1")
+
+# Access all configurations (parsed into Pydantic models)
+obs_cfg = run.get_config("obs_config")
+data_cfg = run.get_config("data_config")
+
+# Get housekeeping telemetry (efficiently parsed)
+hk = run.get_hk()
 ```
 
 ### Accessing Data with PFFSequence
 ```python
-# Access a single frame (header + image)
-header, image = seq.get_frame(0)
-print(f"Packet Number: {header.pkt_num}, Timestamp: {header.timestamp_ns} ns")
+# Standard slicing (returns NumPy array)
+images = seq[0:100]  # (100, 32, 32)
+strided = seq[::10]  # Every 10th frame
 
-# Get a virtual array of multiple consecutive frames (zero-copy if aligned)
-images = seq.get_image_array(start=0, count=100)
-print(images.shape)  # (100, 16, 16)
+# Time-based navigation
+target_ns = 1700000000 * 10**9
+idx = seq.seek_time(target_ns)
+header, img = seq.get_frame(idx)
+
+# Bulk metadata retrieval
+all_meta = seq.get_all_metadata()
+pkt_nums = all_meta["pkt_num"]
 ```
 
-### Housekeeping and Config
+### Multiprocessing & HPC
+`PFFSequence` can be easily used with `concurrent.futures` or `Dask`:
+```python
+import concurrent.futures
+
+def process_chunk(seq, start, end):
+    return seq[start:end].mean(axis=0)
+
+with concurrent.futures.ProcessPoolExecutor() as executor:
+    # seq is automatically pickled and lazily re-opened in workers
+    futures = [executor.submit(process_chunk, seq, i, i+100) for i in range(0, 1000, 100)]
+```
+
+### Housekeeping and Config (Legacy Compatibility)
 ```python
 from pypff import hkpff, qconfig
 
@@ -60,12 +87,12 @@ conf = qconfig("*.json").config
 Run the test suite via the built-in CLI:
 
 ```bash
-uv run pypff all
+uv run pypff test all
 ```
 
 The test suite includes:
 - **Tier 1 (Unit):** Basic logic and timing tests.
-- **Tier 2 (Logic):** Higher-level I/O and sequence tests.
+- **Tier 2 (Logic):** Higher-level I/O, slicing, and concurrency tests.
 - **Legacy Integration:** The original `pypff` test suite using provided sample data.
 
 ## Dockerized CI

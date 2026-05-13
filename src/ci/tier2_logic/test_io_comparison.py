@@ -88,5 +88,5 @@ def test_qconfig_comparison():
     if q_key in legacy_conf and q_key in modern_conf:
         # Legacy: 'OTABG_ON': [1, 1, 1, 1]
         # Modern: 'OTABG_ON': '1,1,1,1'
-        # They will differ unless I fix io2.py
-        assert legacy_conf[q_key] != modern_conf[q_key]
+        # They should now match thanks to the QuaboConfig shim in io2.py
+        assert legacy_conf[q_key] == modern_conf[q_key]

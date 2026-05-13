@@ -1070,6 +1070,7 @@ dependencies = [
     { name = "rich" },
     { name = "scipy" },
     { name = "tqdm" },
+    { name = "typer" },
 ]
 
 [package.optional-dependencies]
@@ -1079,7 +1080,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
-    { name = "typer" },
 ]
 
 [package.metadata]
@@ -1098,7 +1098,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "scipy" },
     { name = "tqdm" },
-    { name = "typer", marker = "extra == 'dev'", specifier = ">=0.9.0" },
+    { name = "typer", specifier = ">=0.9.0" },
 ]
 provides-extras = ["dev"]
 

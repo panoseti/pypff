@@ -413,6 +413,8 @@ class QuaboConfig(BaseModel):
                 data[k] = parse_csv_ints(v)
             elif isinstance(v, str) and v.startswith('0x'):
                 data[k] = int(v, 16)
+            elif isinstance(v, str) and v.lstrip('-').isdigit():
+                data[k] = int(v)
         return data
 
 
