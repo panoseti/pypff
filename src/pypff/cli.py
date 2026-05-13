@@ -21,6 +21,7 @@ class PypffLazyGroup(BaseLazyGroup):
             "show": ("pypff._cli.root", "show", "Explore the structure of a PanoSETI run."),
             "test": ("pypff._cli.test", "app", "Run pypff test suite."),
             "profile": ("pypff._cli.profile", "app", "Run performance benchmarks on a PanoSETI run."),
+            "zarr": ("pypff._cli.zarr", "app", "PFF → Zarr v3 conversion tools."),
         }
         super().__init__(*args, lazy_mapping=lazy_mapping, **kwargs)
 

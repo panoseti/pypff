@@ -44,6 +44,12 @@ dev = [
     "mypy",
     "dask",
 ]
+zarr = [
+    "zarr>=3.0",
+    "numcodecs>=0.12",
+    "dask[distributed]>=2024.1",
+    "xarray>=2024.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
