@@ -1,5 +1,4 @@
-from . import pixelmap as pixelmap
-from .io import datapff as datapff
+from .io import datapff
 from .io2 import PanosetiRun as PanosetiRun
 from .io2 import PFFSequence as PFFSequence
 from .io2 import hkpff as hkpff
@@ -8,7 +7,8 @@ from .models import FrameConfig as FrameConfig
 from .models import ModuleHeader as ModuleHeader
 from .models import PFFHeader as PFFHeader
 from .models import QuaboHeader as QuaboHeader
-from .pixelmap_maroc2phys_bga import maroc2phys_bga as maroc2phys_bga
-from .pixelmap_maroc2phys_qfp import maroc2phys_qfp as maroc2phys_qfp
-from .pixelmap_phys2maroc_bga import phys2maroc_bga as phys2maroc_bga
-from .pixelmap_phys2maroc_qfp import phys2maroc_qfp as phys2maroc_qfp
+from .pixelmap_maroc2phys_bga import maroc2phys_bga
+from .pixelmap_maroc2phys_qfp import maroc2phys_qfp
+from .pixelmap_phys2maroc_bga import phys2maroc_bga 
+from .pixelmap_phys2maroc_qfp import phys2maroc_qfp
+

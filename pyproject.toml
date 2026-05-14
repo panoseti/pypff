@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pypff"
-version = "1.0.1"
+version = "1.0.2"
 description = "Python PANOSETI File Format (PFF) I/O Library"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 license-files = [ "LICENSE" ]
 authors = [
     { name = "Wei Liu", email = "liuwei_berkeley@berkeley.edu" },
