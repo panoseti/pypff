@@ -290,12 +290,12 @@ class DaqNode(BaseModel):
     port_forwarding: PortForwarding | None = None
 
     @field_validator('module_ids', mode='after')
-    def parse_module_ids(cls, v: Any) -> list[int]:
+    def parse_module_ids(cls, v: int | str | list[int]) -> list[int]:
         if isinstance(v, list):
             return v
-        if isinstance(v, int):
+        elif isinstance(v, int):
             return [v]
-        if isinstance(v, str):
+        elif isinstance(v, str):
             if re.match(r'^\d+\-\d+$', v):
                 start, end = map(int, v.split('-'))
                 return list(range(start, end + 1))

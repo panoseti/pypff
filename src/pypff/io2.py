@@ -245,6 +245,9 @@ class PFFSequence:
             self._analyze_offsets(chunk[: self.header_size])
 
             fmt = str(self.meta.get("dp", "unknown")).lower()
+            shape: tuple[int, int]
+            dtype: Any
+            bpp: int
             if "img8" in fmt:
                 shape, dtype, bpp = (32, 32), np.uint8, 1
             elif "img16" in fmt:
@@ -352,7 +355,7 @@ class PFFSequence:
         with_headers: bool = False,
         with_timestamps: bool = False,
         _yield_single: bool = False,
-    ) -> Iterator[np.ndarray | tuple[np.ndarray, ...]]:
+    ) -> Iterator[np.ndarray | tuple[Any, ...]]:
         """
         Yield batches of frames in sequential order.
 
@@ -437,7 +440,7 @@ class PFFSequence:
         *,
         with_headers: bool = False,
         with_timestamps: bool = False,
-    ) -> Iterator[np.ndarray | tuple[np.ndarray, ...]]:
+    ) -> Iterator[np.ndarray | tuple[Any, ...]]:
         """
         Yield batches from a byte-aligned subrange of a single file.
 
@@ -906,6 +909,7 @@ class PFFSequence:
             )[_UNIX_T_NS]
 
         file_ts = self._file_timestamps[file_idx]
+        assert file_ts is not None
         file_start = self._cumulative_frames[file_idx - 1] if file_idx > 0 else 0
 
         pos = bisect.bisect_left(file_ts, timestamp_ns)

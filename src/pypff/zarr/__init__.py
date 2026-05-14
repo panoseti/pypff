@@ -74,29 +74,32 @@ import numpy as np
 
 if TYPE_CHECKING:
     import zarr as _zarr
+
     from ..io2 import PanosetiRun, PFFSequence
 
 # Re-export read-side wrappers so callers only need to import from pypff.zarr
-from ._reader import PanosetiZarrRun, PanosetiZarrStore, open_zarr_run  # noqa: E402
+import contextlib
+
+from ._reader import PanosetiZarrRun, PanosetiZarrStore, open_zarr_run
 
 __all__ = [
-    "ZarrWriter",
-    "ZarrPythonWriter",
     "PFFToZarrConverter",
-    "convert_run",
     "PanosetiZarrRun",
     "PanosetiZarrStore",
+    "ZarrPythonWriter",
+    "ZarrWriter",
+    "convert_run",
     "open_zarr_run",
 ]
 
 # ── dtype table ──────────────────────────────────────────────────────────────
 # Shrink header fields from the default int64 extracted by get_metadata_arrays.
 # Ranges from panoseti-docs/Data-file-format.md:
-#   quabo_num: 0–3 (2 bits used)
-#   pkt_tai:   10-bit WR counter (0–1023)
-#   pkt_num:   per-file packet counter, file ≤ 1 GB → ≤ ~10^7 frames
-#   pkt_nsec:  0 – 999,999,999
-#   tv_usec:   0 – 999,999
+#   quabo_num: 0-3 (2 bits used)
+#   pkt_tai:   10-bit WR counter (0-1023)
+#   pkt_num:   per-file packet counter, file <= 1 GB -> <= ~10^7 frames
+#   pkt_nsec:  0 - 999,999,999
+#   tv_usec:   0 - 999,999
 #   tv_sec:    unix seconds (int64 for future-safety)
 _HEADER_DTYPES: dict[str, np.dtype] = {
     "quabo_num": np.dtype("uint8"),
@@ -123,31 +126,32 @@ class ZarrWriter(Protocol):
     opaque tokens and only pass them back into the same writer.
     """
 
-    def create_store(self, path: Path) -> object:
+    def create_store(self, path: Path) -> _zarr.Group:
         """Create (or overwrite) a Zarr v3 root group at *path*."""
         ...
 
     def create_array(
         self,
-        root_group: object,
+        root_group: _zarr.Group,
         name: str,
         shape: tuple[int, ...],
         chunks: tuple[int, ...],
         dtype: np.dtype,
         dimension_names: list[str] | None = None,
-    ) -> object:
+    ) -> _zarr.Array[Any]:
         """Create an array inside *root_group*. *name* may use '/' for nesting."""
         ...
 
     def write_slice(
-        self, array: object, slices: tuple[slice, ...], data: np.ndarray
+        self, array: _zarr.Array[Any], slices: tuple[slice, ...], data: np.ndarray
     ) -> None:
         """Write *data* into *array* at *slices*."""
         ...
 
-    def set_attrs(self, obj: object, attrs: dict[str, Any]) -> None:
+    def set_attrs(self, obj: _zarr.Group | _zarr.Array[Any], attrs: dict[str, Any]) -> None:
         """Attach metadata attributes to a group or array."""
         ...
+
 
     def finalize(self, path: Path) -> None:
         """Flush and close the store."""
@@ -179,8 +183,9 @@ class ZarrPythonWriter:
             return zc.GzipCodec(level=self._level)
         return None  # codec == "none"
 
-    def create_store(self, path: Path) -> "_zarr.Group":
+    def create_store(self, path: Path) -> _zarr.Group:
         import shutil
+
         import zarr
         if path.exists():
             shutil.rmtree(path)
@@ -188,13 +193,13 @@ class ZarrPythonWriter:
 
     def create_array(
         self,
-        root_group: object,
+        root_group: _zarr.Group,
         name: str,
         shape: tuple[int, ...],
         chunks: tuple[int, ...],
         dtype: np.dtype,
         dimension_names: list[str] | None = None,
-    ) -> "_zarr.Array":
+    ) -> _zarr.Array[Any]:
         import zarr
         group: zarr.Group = root_group  # type: ignore[assignment]
         # Support nested path: "a/b/c" → group "a/b", array "c"
@@ -215,11 +220,11 @@ class ZarrPythonWriter:
         return group.create_array(array_name, **kwargs)  # type: ignore[return-value]
 
     def write_slice(
-        self, array: object, slices: tuple[slice, ...], data: np.ndarray
+        self, array: _zarr.Array[Any], slices: tuple[slice, ...], data: np.ndarray
     ) -> None:
         array[slices] = data  # type: ignore[index]
 
-    def set_attrs(self, obj: object, attrs: dict[str, Any]) -> None:
+    def set_attrs(self, obj: _zarr.Group | _zarr.Array[Any], attrs: dict[str, Any]) -> None:
         obj.attrs.update(attrs)  # type: ignore[union-attr]
 
     def finalize(self, path: Path) -> None:
@@ -228,10 +233,8 @@ class ZarrPythonWriter:
         # consolidate=True if open-time latency on S3 is a concern.
         if self._consolidate:
             import zarr
-            try:
+            with contextlib.suppress(Exception):
                 zarr.consolidate_metadata(str(path))
-            except Exception:
-                pass
 
 
 # ── PFFToZarrConverter ────────────────────────────────────────────────────────
@@ -241,7 +244,7 @@ class PFFToZarrConverter:
 
     def __init__(
         self,
-        seq: "PFFSequence",
+        seq: PFFSequence,
         writer: ZarrWriter | None = None,
         *,
         time_chunk: int | None = None,
@@ -348,7 +351,7 @@ class PFFToZarrConverter:
         # ── header columns ───────────────────────────────────────
         # Arrays are at the root level of the store (flat names) so that
         # xarray.open_zarr sees them as dataset variables automatically.
-        header_arrays: dict[str, object] = {}
+        header_arrays: dict[str, _zarr.Array[Any]] = {}
         for key in seq.metadata_offsets:
             zarr_name = self._zarr_name(key)  # e.g. "pkt_num", "quabo_0_pkt_num"
             dtype = self._field_dtype(key)
@@ -386,7 +389,7 @@ class PFFToZarrConverter:
 
 # ── Sidecar bundle helpers ────────────────────────────────────────────────────
 
-def _extract_run_configs(run: "PanosetiRun") -> dict[str, Any]:
+def _extract_run_configs(run: PanosetiRun) -> dict[str, Any]:
     """Extract parsed run configs from a PanosetiRun as plain JSON-serializable dicts."""
     result: dict[str, Any] = {}
     try:
@@ -406,7 +409,7 @@ def _extract_run_configs(run: "PanosetiRun") -> dict[str, Any]:
 
 
 def _write_sidecar_bundle(
-    run: "PanosetiRun",
+    run: PanosetiRun,
     meta_dir: Path,
     zarr_stores: list[Path],
 ) -> None:
@@ -440,7 +443,7 @@ def _write_sidecar_bundle(
 
     manifest: dict[str, Any] = {
         "panoseti_meta_version": "1.0",
-        "created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "created_utc": datetime.datetime.now(datetime.UTC).isoformat(),
         "source_run_dir": str(run_dir),
         "zarr_stores": [s.name for s in zarr_stores],
     }
@@ -450,7 +453,7 @@ def _write_sidecar_bundle(
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def convert_run(
-    run: "PanosetiRun",
+    run: PanosetiRun,
     out_dir: str | Path,
     *,
     codec: str = "zstd",

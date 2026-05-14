@@ -1,12 +1,14 @@
-import pytest
 from pathlib import Path
+
 import numpy as np
+import pytest
+
 from pypff.io import datapff as datapff_legacy
 from pypff.io2 import PFFSequence
 
 EXAMPLE_DATA_DIR = Path(__file__).parents[3] / "example" / "example-data"
 
-def test_parsing_methods_ph256():
+def test_parsing_methods_ph256() -> None:
     ph256_file = EXAMPLE_DATA_DIR / "start_2023-08-02T00:39:53Z.dp_ph256.bpp_2.module_254.seqno_0.pff"
     if not ph256_file.exists():
         pytest.skip("PH256 test data not found.")
@@ -49,7 +51,7 @@ def test_parsing_methods_ph256():
     np.testing.assert_array_equal(leg_pkt_nums, mod_vec_pkt_nums, err_msg="Legacy metadata mismatch with IO2 Vectorized metadata")
     np.testing.assert_array_equal(naive_pkt_nums_arr, mod_vec_pkt_nums, err_msg="IO2 Naive metadata mismatch with IO2 Vectorized metadata")
 
-def test_parsing_methods_img16():
+def test_parsing_methods_img16() -> None:
     img16_file = EXAMPLE_DATA_DIR / "start_2023-06-08T04:30:29Z.dp_img16.bpp_2.module_1.seqno_0.pff"
     if not img16_file.exists():
         pytest.skip("IMG16 test data not found.")

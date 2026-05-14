@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import time
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from rich.table import Table
 from rich.console import Console
+from rich.table import Table
 
 from .io2 import PanosetiRun, PFFSequence
 
@@ -46,7 +46,7 @@ class Profiler:
         self.run = PanosetiRun(run_dir)
         self.results: list[ProfileResult] = []
 
-    def profile_sequential_read(self, product_name: str, n_frames: Optional[int] = None) -> ProfileResult:
+    def profile_sequential_read(self, product_name: str, n_frames: int | None = None) -> ProfileResult:
         seq = self.run.get_product(product_name)
         n_frames = min(n_frames or len(seq), len(seq))
         
@@ -58,18 +58,18 @@ class Profiler:
         
         return self._record_result("Sequential Read", product_name, n_frames, elapsed, seq)
 
-    def profile_bulk_read(self, product_name: str, n_frames: Optional[int] = None) -> ProfileResult:
+    def profile_bulk_read(self, product_name: str, n_frames: int | None = None) -> ProfileResult:
         seq = self.run.get_product(product_name)
         n_frames = min(n_frames or len(seq), len(seq))
         
         t0 = time.perf_counter()
         # Single bulk read call
-        _ = seq.get_image_array(start=0, count=n_frames)
+        _ = seq.read_images_range(start=0, count=n_frames)
         elapsed = time.perf_counter() - t0
         
-        return self._record_result("Bulk Read (get_image_array)", product_name, n_frames, elapsed, seq)
+        return self._record_result("Bulk Read (read_images_range)", product_name, n_frames, elapsed, seq)
 
-    def profile_strided_read(self, product_name: str, step: int = 10, n_frames: Optional[int] = None) -> ProfileResult:
+    def profile_strided_read(self, product_name: str, step: int = 10, n_frames: int | None = None) -> ProfileResult:
         seq = self.run.get_product(product_name)
         total_available = len(seq)
         indices = np.arange(0, total_available, step)
@@ -93,12 +93,12 @@ class Profiler:
         indices = np.random.randint(0, len(seq), size=n_samples)
         
         t0 = time.perf_counter()
-        _ = seq.get_image_array(indices=indices)
+        _ = seq.read_images(indices=indices)
         elapsed = time.perf_counter() - t0
         
         return self._record_result("Random Access", product_name, n_samples, elapsed, seq)
 
-    def profile_metadata_extraction(self, product_name: str, keys: Optional[list[str]] = None) -> ProfileResult:
+    def profile_metadata_extraction(self, product_name: str, keys: list[str] | None = None) -> ProfileResult:
         seq = self.run.get_product(product_name)
         if not keys:
             keys = ["tv_sec", "tv_usec", "pkt_nsec", "pkt_num"]
@@ -116,7 +116,7 @@ class Profiler:
         
         return self._record_result("Metadata Extraction", product_name, n_frames, elapsed, seq, {"n_keys": len(keys)})
 
-    def _record_result(self, test_name: str, product_name: str, n_frames: int, elapsed: float, seq: PFFSequence, extra: Optional[dict] = None) -> ProfileResult:
+    def _record_result(self, test_name: str, product_name: str, n_frames: int, elapsed: float, seq: PFFSequence, extra: dict[str, Any] | None = None) -> ProfileResult:
         fps = n_frames / elapsed if elapsed > 0 else 0
         
         # Calculate bytes processed
@@ -139,7 +139,7 @@ class Profiler:
     def get_results_df(self) -> pd.DataFrame:
         return pd.DataFrame([r.to_dict() for r in self.results])
 
-    def display_results(self):
+    def display_results(self) -> None:
         console = Console()
         table = Table(title=f"Performance Profile: {self.run.run_dir.name}")
         
@@ -162,7 +162,7 @@ class Profiler:
         
         console.print(table)
 
-    def plot_results(self):
+    def plot_results(self) -> None:
         """
         Visual display of profile outputs using matplotlib/seaborn.
         Useful for Jupyter notebooks.
@@ -176,7 +176,7 @@ class Profiler:
 
         df = self.get_results_df()
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        _fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
         
         sns.barplot(data=df, x="test_name", y="fps", hue="product_name", ax=ax1)
         ax1.set_title("Frames Per Second (FPS)")

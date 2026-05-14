@@ -442,11 +442,26 @@ wheels = [
 ]
 
 [[package]]
+name = "hatchling"
+version = "1.29.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pathspec" },
+    { name = "pluggy" },
+    { name = "trove-classifiers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/9c/b4cfe330cd4f49cff17fd771154730555fa4123beb7f292cf0098b4e6c20/hatchling-1.29.0.tar.gz", hash = "sha256:793c31816d952cee405b83488ce001c719f325d9cda69f1fc4cd750527640ea6", size = 55656, upload-time = "2026-02-23T19:42:06.539Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/8a/44032265776062a89171285ede55a0bdaadc8ac00f27f0512a71a9e3e1c8/hatchling-1.29.0-py3-none-any.whl", hash = "sha256:50af9343281f34785fab12da82e445ed987a6efb34fd8c2fc0f6e6630dbcc1b0", size = 76356, upload-time = "2026-02-23T19:42:05.197Z" },
+]
+
+[[package]]
 name = "importlib-metadata"
 version = "9.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp", marker = "python_full_version < '3.15'" },
+    { name = "zipp", marker = "python_full_version < '3.12'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/01/15bb152d77b21318514a96f43af312635eb2500c96b55398d020c93d86ea/importlib_metadata-9.0.0.tar.gz", hash = "sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc", size = 56405, upload-time = "2026-03-20T06:42:56.999Z" }
 wheels = [
@@ -1504,11 +1519,13 @@ wheels = [
 
 [[package]]
 name = "pypff"
-version = "1.1.0"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "astropy" },
+    { name = "dask", extra = ["distributed"] },
     { name = "matplotlib" },
+    { name = "numcodecs" },
     { name = "numpy" },
     { name = "orjson" },
     { name = "plotly" },
@@ -1517,11 +1534,15 @@ dependencies = [
     { name = "scipy" },
     { name = "tqdm" },
     { name = "typer" },
+    { name = "xarray" },
+    { name = "zarr", version = "3.1.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "zarr", version = "3.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 
 [package.optional-dependencies]
 dev = [
     { name = "dask" },
+    { name = "hatchling" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1544,9 +1565,12 @@ dev = [
 requires-dist = [
     { name = "astropy" },
     { name = "dask", marker = "extra == 'dev'" },
+    { name = "dask", extras = ["distributed"], specifier = ">=2024.1" },
     { name = "dask", extras = ["distributed"], marker = "extra == 'zarr'", specifier = ">=2024.1" },
+    { name = "hatchling", marker = "extra == 'dev'" },
     { name = "matplotlib" },
     { name = "mypy", marker = "extra == 'dev'" },
+    { name = "numcodecs", specifier = ">=0.12" },
     { name = "numcodecs", marker = "extra == 'zarr'", specifier = ">=0.12" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "orjson", specifier = ">=3.9.0" },
@@ -1559,7 +1583,9 @@ requires-dist = [
     { name = "scipy" },
     { name = "tqdm" },
     { name = "typer", specifier = ">=0.9.0" },
+    { name = "xarray", specifier = ">=2024.1" },
     { name = "xarray", marker = "extra == 'zarr'", specifier = ">=2024.1" },
+    { name = "zarr", specifier = ">=3.0" },
     { name = "zarr", marker = "extra == 'zarr'", specifier = ">=3.0" },
 ]
 provides-extras = ["dev", "zarr"]
@@ -1912,6 +1938,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl", hash = "sha256:ee1e4c0e59148062281c49d80b25b67771a127c85fc9676d3be5f243206826bf", size = 78374, upload-time = "2026-02-03T17:35:50.982Z" },
+]
+
+[[package]]
+name = "trove-classifiers"
+version = "2026.5.7.17"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/68/175e7c07c5be13200387d5c0995b0da1e198e360047c08eb17d1002fcd92/trove_classifiers-2026.5.7.17.tar.gz", hash = "sha256:a04a48f8f0a787cb996514d3969ac7608aa3c60cb15d073c1e02801e60533e80", size = 17041, upload-time = "2026-05-07T17:48:01.931Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/e3/d81b065a2d866a33a541ac63a2a4cc5737e03ce2379ac3191c98bb8867e3/trove_classifiers-2026.5.7.17-py3-none-any.whl", hash = "sha256:5ec0800de5e2ddbd7c663cb4c0c15328f132dc168813897c18866c5c7b93db33", size = 14201, upload-time = "2026-05-07T17:48:00.488Z" },
 ]
 
 [[package]]

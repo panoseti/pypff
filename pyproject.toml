@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pypff"
-version = "1.0.0"
-description = "High-performance PanoSETI File Format (PFF) I/O library"
+version = "1.0.1"
+description = "Python PANOSETI File Format (PFF) I/O Library"
 readme = "README.md"
 requires-python = ">=3.11"
 license-files = [ "LICENSE" ]

@@ -1,19 +1,21 @@
-import typer
 from pathlib import Path
-from typing import Annotated, Optional
-from pypff.profiling import Profiler
+from typing import Annotated
+
+import typer
 from rich.console import Console
+
+from pypff.profiling import Profiler
 
 app = typer.Typer()
 
 @app.command()
 def run(
     run_dir: Annotated[Path, typer.Argument(help="Path to the .pffd run directory.")],
-    products: Annotated[Optional[list[str]], typer.Option("--product", "-p", help="Specific products to test. Defaults to all.")] = None,
+    products: Annotated[list[str] | None, typer.Option("--product", "-p", help="Specific products to test. Defaults to all.")] = None,
     n_frames: Annotated[int, typer.Option("--frames", "-n", help="Number of frames to test per product.")] = 1000,
     step: Annotated[int, typer.Option("--step", "-s", help="Step size for strided read test.")] = 10,
     random_samples: Annotated[int, typer.Option("--random", "-r", help="Number of random access samples.")] = 100,
-):
+) -> None:
     """Run performance benchmarks on a PanoSETI run."""
     console = Console()
     

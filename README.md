@@ -1,4 +1,4 @@
-# pypff - High-performance PanoSETI I/O Library
+# pypff - Python PANOSETI File Format I/O Library
 
 [![pypff-CI](https://github.com/panoseti/pypff/actions/workflows/egg.yml/badge.svg)](https://github.com/panoseti/pypff/actions)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/panoseti/pypff)

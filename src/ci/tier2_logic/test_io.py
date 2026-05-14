@@ -1,11 +1,13 @@
-import pytest
 from pathlib import Path
-from pypff.io2 import PanosetiRun, PFFSequence, hkpff
+
 import numpy as np
+import pytest
+
+from pypff.io2 import PanosetiRun, PFFSequence, hkpff
 
 EXAMPLE_DATA_DIR = Path(__file__).parents[3] / "example" / "example-data"
 
-def test_panoseti_run_scan():
+def test_panoseti_run_scan() -> None:
     if not EXAMPLE_DATA_DIR.exists():
         pytest.skip("Example data directory not found.")
     
@@ -15,7 +17,7 @@ def test_panoseti_run_scan():
     assert "dp_ph256.bpp_2.module_254" in products
     assert "dp_img16.bpp_2.module_1" in products
 
-def test_pff_sequence_ph256():
+def test_pff_sequence_ph256() -> None:
     if not EXAMPLE_DATA_DIR.exists():
         pytest.skip("Example data directory not found.")
     
@@ -29,7 +31,7 @@ def test_pff_sequence_ph256():
     assert img.dtype == np.int16
     assert "pkt_num" in header  # get_frame returns a dict by default
 
-def test_pff_sequence_img16():
+def test_pff_sequence_img16() -> None:
     if not EXAMPLE_DATA_DIR.exists():
         pytest.skip("Example data directory not found.")
     
@@ -37,12 +39,12 @@ def test_pff_sequence_img16():
     seq = PFFSequence([img16_file])
     
     assert len(seq) > 0
-    header, img = seq.get_frame(0)
+    _header, img = seq.get_frame(0)
     
     assert img.shape == (32, 32)
     assert img.dtype == np.uint16
 
-def test_hkpff_read():
+def test_hkpff_read() -> None:
     if not EXAMPLE_DATA_DIR.exists():
         pytest.skip("Example data directory not found.")
     
@@ -54,7 +56,7 @@ def test_hkpff_read():
     assert "DET_TEMP" in info["QUABO_1019"]
     assert len(info["QUABO_1019"]["DET_TEMP"]) > 0
 
-def test_get_image_array():
+def test_get_image_array() -> None:
     if not EXAMPLE_DATA_DIR.exists():
         pytest.skip("Example data directory not found.")
         

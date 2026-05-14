@@ -1,11 +1,13 @@
+import concurrent.futures
+from pathlib import Path
+
 import numpy as np
 import pytest
-import concurrent.futures
-import pickle
-from pathlib import Path
-from pypff.io2 import PFFSequence, PanosetiRun
 
-def create_dummy_pff(path: Path, n_frames: int = 10, is_module: bool = False, start_idx: int = 0):
+from pypff.io2 import PFFSequence
+
+
+def create_dummy_pff(path: Path, n_frames: int = 10, is_module: bool = False, start_idx: int = 0) -> None:
     if is_module:
         # Fixed-width format strings (mimicking PanoSETI's space-padded JSON)
         header_base = (
@@ -28,7 +30,7 @@ def create_dummy_pff(path: Path, n_frames: int = 10, is_module: bool = False, st
             f.write(h.encode() + payload)
 
 @pytest.fixture
-def dummy_run(tmp_path):
+def dummy_run(tmp_path: Path) -> Path:
     run_dir = tmp_path / "test_run.pffd"
     run_dir.mkdir()
     create_dummy_pff(run_dir / "start_2024-01-01T00:00:00Z.dp_img16.bpp_2.module_1.seqno_0.pff", n_frames=10, start_idx=0)
@@ -37,7 +39,7 @@ def dummy_run(tmp_path):
     (run_dir / "data_config.json").write_text('{"run_type": "test", "image": {"integration_time_usec": 1000, "pe_threshold": 1.0, "quabo_sample_size": 16}}')
     return run_dir
 
-def test_pffsequence_slicing(dummy_run):
+def test_pffsequence_slicing(dummy_run: Path) -> None:
     files = sorted(list(dummy_run.glob("*.pff")))
     seq = PFFSequence(files)
     assert len(seq) == 20
@@ -52,11 +54,11 @@ def test_pffsequence_slicing(dummy_run):
     rev = seq[5:0:-1]
     assert rev.shape == (5, 32, 32)
 
-def read_frame_sum(s, i):
+def read_frame_sum(s: PFFSequence, i: int) -> int:
     _, img = s.get_frame(i)
-    return img.sum()
+    return int(img.sum())
 
-def test_pffsequence_multiprocessing(dummy_run):
+def test_pffsequence_multiprocessing(dummy_run: Path) -> None:
     files = sorted(list(dummy_run.glob("*.pff")))
     seq = PFFSequence(files)
     with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:
@@ -64,7 +66,7 @@ def test_pffsequence_multiprocessing(dummy_run):
         results = [f.result() for f in futures]
     assert len(results) == 20
 
-def test_pffsequence_timing_and_seek(dummy_run):
+def test_pffsequence_timing_and_seek(dummy_run: Path) -> None:
     files = sorted(list(dummy_run.glob("*.pff")))
     seq = PFFSequence(files)
     t0 = seq.timestamp_at(0)
@@ -73,7 +75,7 @@ def test_pffsequence_timing_and_seek(dummy_run):
     idx = seq.seek_time(t0 + 500)
     assert idx in [0, 1]
 
-def test_pffsequence_stress_many_files(tmp_path):
+def test_pffsequence_stress_many_files(tmp_path: Path) -> None:
     run_dir = tmp_path / "stress_run.pffd"
     run_dir.mkdir()
     n_files, frames_per_file = 50, 2

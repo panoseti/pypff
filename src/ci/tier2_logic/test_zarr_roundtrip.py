@@ -13,6 +13,7 @@ Verifies:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -23,7 +24,7 @@ zarr = pytest.importorskip("zarr", reason="zarr not installed; run: uv sync --ex
 # ── fixture helpers ──────────────────────────────────────────────────────────
 
 def _make_ph256_pff(path: Path, n_frames: int = 20, start_idx: int = 0) -> None:
-    """Single-level (ph256) PFF: 16×16 int16 payload, quabo_num header."""
+    """Single-level (ph256) PFF: 16x16 int16 payload, quabo_num header."""
     header_base = (
         '{"quabo_num":          0, "pkt_num": %10d, "pkt_tai":          0, '
         '"pkt_nsec": %10d, "tv_sec": 1700000000, "tv_usec":          0}\n\n*'
@@ -36,7 +37,7 @@ def _make_ph256_pff(path: Path, n_frames: int = 20, start_idx: int = 0) -> None:
 
 
 def _make_img16_pff(path: Path, n_frames: int = 15, start_idx: int = 0) -> None:
-    """Module-level (img16) PFF: 32×32 uint16 payload, quabo_0..3 header."""
+    """Module-level (img16) PFF: 32x32 uint16 payload, quabo_0..3 header."""
     header_base = (
         '{"quabo_0": {"pkt_num": %10d, "pkt_tai": %10d, "pkt_nsec": %10d, '
         '"tv_sec": 1700000000, "tv_usec":          0}, '
@@ -60,7 +61,7 @@ def _make_img16_pff(path: Path, n_frames: int = 15, start_idx: int = 0) -> None:
 
 
 @pytest.fixture
-def ph256_run(tmp_path):
+def ph256_run(tmp_path: Path) -> Path:
     run_dir = tmp_path / "ph256_test.pffd"
     run_dir.mkdir()
     _make_ph256_pff(
@@ -75,7 +76,7 @@ def ph256_run(tmp_path):
 
 
 @pytest.fixture
-def img16_run(tmp_path):
+def img16_run(tmp_path: Path) -> Path:
     run_dir = tmp_path / "img16_test.pffd"
     run_dir.mkdir()
     _make_img16_pff(
@@ -87,7 +88,7 @@ def img16_run(tmp_path):
 
 # ── roundtrip: images ─────────────────────────────────────────────────────────
 
-def test_images_roundtrip_ph256(ph256_run, tmp_path):
+def test_images_roundtrip_ph256(ph256_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -102,7 +103,7 @@ def test_images_roundtrip_ph256(ph256_run, tmp_path):
     np.testing.assert_array_equal(store["images"][:], expected)
 
 
-def test_images_roundtrip_img16(img16_run, tmp_path):
+def test_images_roundtrip_img16(img16_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -119,7 +120,7 @@ def test_images_roundtrip_img16(img16_run, tmp_path):
 
 # ── roundtrip: timestamps ─────────────────────────────────────────────────────
 
-def test_timestamps_match_pff(ph256_run, tmp_path):
+def test_timestamps_match_pff(ph256_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -137,7 +138,7 @@ def test_timestamps_match_pff(ph256_run, tmp_path):
 
 # ── roundtrip: header values ─────────────────────────────────────────────────
 
-def test_header_values_match_pff(ph256_run, tmp_path):
+def test_header_values_match_pff(ph256_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -155,7 +156,7 @@ def test_header_values_match_pff(ph256_run, tmp_path):
 
 # ── header dtypes ─────────────────────────────────────────────────────────────
 
-def test_header_dtypes_single_level(ph256_run, tmp_path):
+def test_header_dtypes_single_level(ph256_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -179,7 +180,7 @@ def test_header_dtypes_single_level(ph256_run, tmp_path):
             )
 
 
-def test_header_dtypes_module_level(img16_run, tmp_path):
+def test_header_dtypes_module_level(img16_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -197,7 +198,7 @@ def test_header_dtypes_module_level(img16_run, tmp_path):
 
 # ── module-level header structure ─────────────────────────────────────────────
 
-def test_module_header_flat_names(img16_run, tmp_path):
+def test_module_header_flat_names(img16_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -216,28 +217,28 @@ def test_module_header_flat_names(img16_run, tmp_path):
 
 # ── ZarrWriter protocol ───────────────────────────────────────────────────────
 
-def test_no_op_writer_satisfies_protocol():
+def test_no_op_writer_satisfies_protocol() -> None:
     from pypff.zarr import ZarrWriter
 
     class RecordingWriter:
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def create_store(self, path):
+        def create_store(self, path: Path | str) -> Any:
             self.calls.append("create_store")
             return {}
 
-        def create_array(self, root_group, name, shape, chunks, dtype):
+        def create_array(self, root_group: Any, name: str, shape: Any, chunks: Any, dtype: Any) -> Any:
             self.calls.append(f"create_array:{name}")
             return {}
 
-        def write_slice(self, array, slices, data):
+        def write_slice(self, array: Any, slices: Any, data: Any) -> None:
             self.calls.append("write_slice")
 
-        def set_attrs(self, obj, attrs):
+        def set_attrs(self, obj: Any, attrs: dict[str, Any]) -> None:
             self.calls.append("set_attrs")
 
-        def finalize(self, path):
+        def finalize(self, path: Path | str) -> None:
             self.calls.append("finalize")
 
     assert isinstance(RecordingWriter(), ZarrWriter)
@@ -245,7 +246,7 @@ def test_no_op_writer_satisfies_protocol():
 
 # ── store attributes ──────────────────────────────────────────────────────────
 
-def test_root_attrs_present(ph256_run, tmp_path):
+def test_root_attrs_present(ph256_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -257,10 +258,10 @@ def test_root_attrs_present(ph256_run, tmp_path):
     assert "panoseti_pff_zarr_version" in attrs
     assert "frame_config" in attrs
     assert attrs["data_product"] == "ph256"
-    assert attrs["total_frames"] == 40  # 2 files × 20 frames
+    assert attrs["total_frames"] == 40  # 2 files x 20 frames
 
 
-def test_unix_t_ns_attrs(ph256_run, tmp_path):
+def test_unix_t_ns_attrs(ph256_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -275,7 +276,7 @@ def test_unix_t_ns_attrs(ph256_run, tmp_path):
 
 # ── xarray integration ────────────────────────────────────────────────────────
 
-def test_xarray_open(ph256_run, tmp_path):
+def test_xarray_open(ph256_run: Path, tmp_path: Path) -> None:
     pytest.importorskip("xarray")
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
@@ -298,7 +299,7 @@ def test_xarray_open(ph256_run, tmp_path):
 
 # ── discoverability attrs ─────────────────────────────────────────────────────
 
-def test_header_fields_single_level(ph256_run, tmp_path):
+def test_header_fields_single_level(ph256_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -313,7 +314,7 @@ def test_header_fields_single_level(ph256_run, tmp_path):
     assert attrs["quabo_fields"] == []  # ph256 has no per-quabo fields
 
 
-def test_header_fields_module_level(img16_run, tmp_path):
+def test_header_fields_module_level(img16_run: Path, tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -322,7 +323,7 @@ def test_header_fields_module_level(img16_run, tmp_path):
 
     attrs = dict(zarr.open_group(str(stores[0]), mode="r").attrs)
     qf = set(attrs["quabo_fields"])
-    # All four quabos × 5 fields = 20
+    # All four quabos x 5 fields = 20
     assert len(qf) == 20
     assert "quabo_0_pkt_num" in qf
     assert "quabo_3_tv_usec" in qf
@@ -331,9 +332,10 @@ def test_header_fields_module_level(img16_run, tmp_path):
 
 # ── run_configs embedding ─────────────────────────────────────────────────────
 
-def test_run_configs_embedded(tmp_path):
+def test_run_configs_embedded(tmp_path: Path) -> None:
     """Configs written alongside .pff files are embedded in zarr root attrs."""
     import json
+
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -358,8 +360,7 @@ def test_run_configs_embedded(tmp_path):
 
 # ── sidecar bundle ────────────────────────────────────────────────────────────
 
-def test_sidecar_bundle_written(tmp_path):
-    import json
+def test_sidecar_bundle_written(tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -385,7 +386,7 @@ def test_sidecar_bundle_written(tmp_path):
     assert (meta / "sentinels" / "collect_complete").exists()
 
 
-def test_sidecar_bundle_skipped(tmp_path):
+def test_sidecar_bundle_skipped(tmp_path: Path) -> None:
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -404,10 +405,11 @@ def test_sidecar_bundle_skipped(tmp_path):
 
 # ── PanosetiZarrRun read-side wrapper ────────────────────────────────────────
 
-def test_panoseti_zarr_run(ph256_run, tmp_path):
+def test_panoseti_zarr_run(ph256_run: Path, tmp_path: Path) -> None:
     import json
+
     from pypff.io2 import PanosetiRun
-    from pypff.zarr import convert_run, PanosetiZarrRun
+    from pypff.zarr import PanosetiZarrRun, convert_run
 
     # Use a raw-dict config (sw_info is not a known Pydantic model → stored as dict)
     (ph256_run / "sw_info.json").write_text(json.dumps({"obs_name": "RoundtripTest"}))
@@ -436,10 +438,12 @@ def test_panoseti_zarr_run(ph256_run, tmp_path):
 
 # ── no ZarrUserWarning during conversion ─────────────────────────────────────
 
-def test_no_zarr_user_warning(ph256_run, tmp_path):
+def test_no_zarr_user_warning(ph256_run: Path, tmp_path: Path) -> None:
     """convert_run must not emit ZarrUserWarning (consolidated metadata warning)."""
     import warnings
+
     from zarr.errors import MetadataValidationError  # noqa: F401 (ensure zarr imported)
+
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 

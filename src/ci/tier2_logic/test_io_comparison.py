@@ -1,14 +1,20 @@
-import pytest
 from pathlib import Path
+
 import numpy as np
-from pypff.io import hkpff as hkpff_legacy, datapff as datapff_legacy, qconfig as qconfig_legacy
-from pypff.io2 import hkpff as hkpff_modern, PFFSequence, PanosetiRun, qconfig as qconfig_modern
+import pytest
+
+from pypff.io import datapff as datapff_legacy
+from pypff.io import hkpff as hkpff_legacy
+from pypff.io import qconfig as qconfig_legacy
+from pypff.io2 import PFFSequence
+from pypff.io2 import hkpff as hkpff_modern
+from pypff.io2 import qconfig as qconfig_modern
 
 EXAMPLE_DATA_DIR = Path(__file__).parents[3] / "example" / "example-data"
 LEGACY_TEST_DATA_DIR = Path(__file__).parents[1] / "legacy_tests"
 
 
-def test_hkpff_comparison():
+def test_hkpff_comparison() -> None:
     hk_file = LEGACY_TEST_DATA_DIR / "hk-data" / "hk.pff"
     if not hk_file.exists():
         pytest.skip("HK test data not found.")
@@ -27,7 +33,7 @@ def test_hkpff_comparison():
             )
 
 
-def test_datapff_vs_pffsequence_ph256():
+def test_datapff_vs_pffsequence_ph256() -> None:
     ph256_file = EXAMPLE_DATA_DIR / "start_2023-08-02T00:39:53Z.dp_ph256.bpp_2.module_254.seqno_0.pff"
     if not ph256_file.exists():
         pytest.skip("PH256 test data not found.")
@@ -50,7 +56,7 @@ def test_datapff_vs_pffsequence_ph256():
     assert int(leg_meta["tv_usec"][0]) == mod_header["tv_usec"]
 
 
-def test_datapff_vs_pffsequence_img16():
+def test_datapff_vs_pffsequence_img16() -> None:
     img16_file = EXAMPLE_DATA_DIR / "start_2023-06-08T04:30:29Z.dp_img16.bpp_2.module_1.seqno_0.pff"
     if not img16_file.exists():
         pytest.skip("IMG16 test data not found.")
@@ -71,7 +77,7 @@ def test_datapff_vs_pffsequence_img16():
     assert int(leg_meta["quabo_3"]["tv_sec"][0]) == mod_header["quabo_3"]["tv_sec"]
 
 
-def test_qconfig_comparison():
+def test_qconfig_comparison() -> None:
     config_pattern = str(EXAMPLE_DATA_DIR / "*.json")
 
     legacy_conf = qconfig_legacy(config_pattern).config

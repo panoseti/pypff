@@ -1,20 +1,22 @@
-import pytest
 from pathlib import Path
+
 import numpy as np
-from pypff.io2 import PanosetiRun, PFFSequence, hkpff, qconfig
-from pypff.models import QuaboHeader, ModuleHeader, DataConfig, ObsConfig
+import pytest
+
+from pypff.io2 import PanosetiRun, PFFSequence, hkpff
+from pypff.models import DataConfig, ModuleHeader, ObsConfig, QuaboHeader
 
 EXAMPLE_DATA_DIR = Path(__file__).parents[3] / "example" / "example-data"
 
 
 @pytest.fixture
-def example_run():
+def example_run() -> PanosetiRun:
     if not EXAMPLE_DATA_DIR.exists():
         pytest.skip("Example data not found.")
     return PanosetiRun(EXAMPLE_DATA_DIR)
 
 
-def test_panoseti_run_comprehensive(example_run):
+def test_panoseti_run_comprehensive(example_run: PanosetiRun) -> None:
     run = example_run
 
     products = run.list_products()
@@ -31,7 +33,7 @@ def test_panoseti_run_comprehensive(example_run):
     assert len(seq) > 0
 
 
-def test_pff_sequence_comprehensive():
+def test_pff_sequence_comprehensive() -> None:
     ph256_file = EXAMPLE_DATA_DIR / "start_2023-08-02T00:39:53Z.dp_ph256.bpp_2.module_254.seqno_0.pff"
     if not ph256_file.exists():
         pytest.skip("PH256 test data not found.")
@@ -89,7 +91,7 @@ def test_pff_sequence_comprehensive():
     assert len(seq._lru) == 0
 
 
-def test_pff_sequence_module_mode():
+def test_pff_sequence_module_mode() -> None:
     img16_file = EXAMPLE_DATA_DIR / "start_2023-06-08T04:30:29Z.dp_img16.bpp_2.module_1.seqno_0.pff"
     if not img16_file.exists():
         pytest.skip("IMG16 test data not found.")
@@ -110,7 +112,7 @@ def test_pff_sequence_module_mode():
     assert header_v.quabo_0.timestamp_ns == header_v.timestamp_ns
 
 
-def test_hkpff_modern_comprehensive():
+def test_hkpff_modern_comprehensive() -> None:
     hk_file = EXAMPLE_DATA_DIR / "hk.pff"
     if not hk_file.exists():
         pytest.skip("HK test data not found.")
@@ -133,7 +135,7 @@ def test_hkpff_modern_comprehensive():
     assert np.issubdtype(det_temp.dtype, np.floating) or np.issubdtype(det_temp.dtype, np.integer)
 
 
-def test_qconfig_modern_comprehensive():
+def test_qconfig_modern_comprehensive() -> None:
     run = PanosetiRun(EXAMPLE_DATA_DIR)
     conf = run.configs
 
@@ -141,7 +143,7 @@ def test_qconfig_modern_comprehensive():
     assert "data_config" in conf
     assert "daq_config" in conf
 
-    from pypff.models import ObsConfig, DataConfig, QuaboConfig
+    from pypff.models import QuaboConfig
     assert isinstance(conf["obs_config"], ObsConfig)
     assert isinstance(conf["data_config"], DataConfig)
 
@@ -154,9 +156,9 @@ def test_qconfig_modern_comprehensive():
         assert conf[q_key].OTABG_ON == [1, 1, 1, 1]
 
 
-def test_pff_sequence_multi_file():
-    import tempfile
+def test_pff_sequence_multi_file() -> None:
     import shutil
+    import tempfile
 
     source_file = EXAMPLE_DATA_DIR / "start_2023-08-02T00:39:53Z.dp_ph256.bpp_2.module_254.seqno_0.pff"
     if not source_file.exists():
