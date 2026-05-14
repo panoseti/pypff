@@ -29,12 +29,12 @@ def test_read_hk() -> None:
         for kk in hk_info[k]:
             try:
                 if kk == 'DET_TEMP':
-                    v = float(expected_hk_results[k]['TEMP1'])
+                    v: float | str = float(expected_hk_results[k]['TEMP1'])
                 elif kk == 'FPGA_TEMP':
                     v = float(expected_hk_results[k]['TEMP2'])
                 else:
                     v = float(expected_hk_results[k][kk])
-            except (ValueError, TypeError, KeyError):
+            except (ValueError, KeyError, TypeError):
                 v = expected_hk_results[k][kk]
             assert hk_info[k][kk][0] == v
 
@@ -78,8 +78,8 @@ def test_read_pff() -> None:
     # check metadata
     for k in metadata:
         try:
-            v = int(expected_pff_metadata[k])
-        except (ValueError, TypeError, KeyError):
+            v: int | str = int(expected_pff_metadata[k])
+        except (ValueError, KeyError, TypeError):
             v = expected_pff_metadata[k]
         assert metadata[k][0] == v
     # check data
