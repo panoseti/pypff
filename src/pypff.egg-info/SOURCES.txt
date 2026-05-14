@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/pypff/__init__.py
+src/pypff/io.py
+src/pypff/pixelmap.py
+src/pypff/pixelmap_maroc2phys_bga.py
+src/pypff/pixelmap_maroc2phys_qfp.py
+src/pypff/pixelmap_phys2maroc_bga.py
+src/pypff/pixelmap_phys2maroc_qfp.py
+src/pypff.egg-info/PKG-INFO
+src/pypff.egg-info/SOURCES.txt
+src/pypff.egg-info/dependency_links.txt
+src/pypff.egg-info/requires.txt
+src/pypff.egg-info/top_level.txt

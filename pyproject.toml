@@ -1,8 +1,15 @@
 [build-system]
-requires = [
-    "setuptools>=61",
-    "wheel",
-    "numpy"
-]
+requires = ["setuptools>=61", "wheel", "numpy"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "pypff"
+version = "0.1.0"
+description = "Software for reading pff files generated in PANOSETI project"
+authors = [{ name = "Wei Liu", email = "liuwei_berkeley@email.com" }]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy", "astropy", "datetime", "pyjson", "scipy", "matplotlib"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

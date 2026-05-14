@@ -4,6 +4,7 @@ This module provides methods to reading pff data file, including img16, img8, ph
 import json
 import datetime
 import numpy as np
+import mmap
 from glob import glob
 from . import pixelmap
 
@@ -195,7 +196,7 @@ class datapff(object):
             self.dtype = np.uint8
         self.metadata = {}
 
-    def readpff(self, samples=-1, skip = 0, pixel = -1, ver='qfb', metadata=False):
+    def readpff(self, samples=-1, skip = 0, pixel = -1, ver='qfb', metadata=False, mode='mmap'):
         '''
         Description:
             Read data from a data pff file.
@@ -212,6 +213,11 @@ class datapff(object):
                           Default = 0
             -- ver(str): quabo version.
                         Default = 'qfp'
+            -- metadata(bool): If True, read Medatadata out.
+                        Default = False
+            -- mode(str): reading mode. 'mmap' or 'read'.
+                        Default = 'mmap'
+
         Outputs:
             -- metadata(dict): a dict contains the metadata from each sample.
             -- data(np.array): data array.
@@ -220,10 +226,19 @@ class datapff(object):
         metadata_loc = md_loc[self.dp]
         # read data out from a ph256, img16 or ph1024 file
         with open(self.fn,'rb') as f:
-            if samples == -1:
-                tmp = np.frombuffer(f.read(),dtype = self.dtype)
+            if mode == 'mmap':
+                mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+                if samples == -1:
+                    tmp = np.frombuffer(mm,dtype = self.dtype)
+                else:
+                    tmp = np.frombuffer(mm, dtype=self.dtype, count=samples*int(self.datasize/self.bpp), offset=0)
+            elif mode == 'read':
+                if samples == -1:
+                    tmp = np.frombuffer(f.read(),dtype = self.dtype)
+                else:
+                    tmp = np.frombuffer(f.read(samples*int(self.datasize/self.bpp)), dtype=self.dtype)
             else:
-                tmp = np.frombuffer(f.read(samples*int(self.datasize/self.bpp)), dtype=self.dtype)
+                raise ValueError(f"mode({mode} is not supported.)")
         # reshape the data
         tmp.shape = (-1, int(self.datasize/self.bpp))
         # get data
