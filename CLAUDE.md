@@ -78,9 +78,44 @@ times_ns / 1e9 - t0_s
 
 `src/pypff/pixelmap.py` and the four `pixelmap_*.py` files provide MAROC↔physical pixel coordinate conversions for BGA and QFP package variants. These are static lookup tables.
 
+### Zarr v3 Conversion (`src/pypff/zarr/`, optional extra `pypff[zarr]`)
+
+Install with `uv sync --extra zarr`. The zarr extra requires zarr-python ≥ 3, xarray, and dask.
+
+**Conversion:**
+```bash
+uv run pypff zarr <obs.pffd> <out_dir>   # CLI
+```
+```python
+from pypff import PanosetiRun
+from pypff.zarr import convert_run
+stores = convert_run(PanosetiRun("obs.pffd"), "out/")
+```
+
+**Reading:**
+```python
+from pypff.zarr import PanosetiZarrRun
+zrun = PanosetiZarrRun("out/")
+store = zrun.get_product("dp_ph256.bpp_2.module_254")
+store.timestamps()    # int64 ns
+store.to_dataset()    # xarray.Dataset — images + unix_t_ns + all header fields
+```
+
+**Key design decisions (see [`docs/zarr_v3_spec.md`](docs/zarr_v3_spec.md) for the full spec):**
+- **Flat root layout**: all arrays (`images`, `unix_t_ns`, header fields) live at the zarr store root — no sub-groups. `xr.open_zarr(store)` surfaces every variable automatically. Sub-groups are invisible to `xr.open_zarr` without `group=`, so the hierarchical layout was rejected.
+- **Module-level header naming**: `quabo_0.pkt_num` → `quabo_0_pkt_num` (dots replaced by underscores) for xarray compatibility.
+- **Discoverability attrs**: `header_fields` and `quabo_fields` lists in root attrs let consumers separate image columns from metadata columns without re-deriving naming conventions.
+- **No consolidated metadata**: `zarr.consolidate_metadata()` is not called by default — it is non-spec for Zarr v3 and emits `ZarrUserWarning`. Use `xr.open_zarr(store, consolidated=False)`.
+- **Sidecar bundle**: `convert_run` writes a sibling `<run>.panoseti-meta/` directory with all non-PFF ancillary files (configs/, logs/, hk.pff, sentinels/). Run configs are also embedded in each store's root attrs under `run_configs`.
+
+**Key files:**
+- `src/pypff/zarr/__init__.py` — `ZarrWriter` protocol, `ZarrPythonWriter`, `PFFToZarrConverter`, `convert_run`
+- `src/pypff/zarr/_reader.py` — `PanosetiZarrStore`, `PanosetiZarrRun`, `open_zarr_run`
+- `docs/zarr_v3_spec.md` — full store layout specification
+
 ### CLI (`src/pypff/cli.py`, `src/pypff/_cli/`)
 
-Built with `typer`. Entry point is `pypff` (defined in `pyproject.toml`). Sub-commands live in `src/pypff/_cli/`. The `test` sub-command (`_cli/test.py`) delegates to `pytest` via `subprocess`.
+Built with `typer`. Entry point is `pypff` (defined in `pyproject.toml`). Sub-commands live in `src/pypff/_cli/`. The `test` sub-command (`_cli/test.py`) delegates to `pytest` via `subprocess`. The `zarr` sub-command (`_cli/zarr.py`) wraps `convert_run`.
 
 ### Test Structure
 

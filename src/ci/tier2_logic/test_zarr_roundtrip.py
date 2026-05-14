@@ -148,7 +148,8 @@ def test_header_values_match_pff(ph256_run, tmp_path):
     pff_meta = pff_seq.get_metadata_arrays(["pkt_num"])
 
     store = zarr.open_group(str(stores[0]), mode="r")
-    zarr_pkt_num = store["headers"]["pkt_num"][:].astype(np.int64)
+    # Headers are flat root-level arrays; xarray.open_zarr sees them as variables.
+    zarr_pkt_num = store["pkt_num"][:].astype(np.int64)
     np.testing.assert_array_equal(zarr_pkt_num, pff_meta["pkt_num"])
 
 
@@ -162,7 +163,6 @@ def test_header_dtypes_single_level(ph256_run, tmp_path):
     stores = convert_run(run, tmp_path / "out")
 
     store = zarr.open_group(str(stores[0]), mode="r")
-    headers = store["headers"]
 
     expected = {
         "quabo_num": np.dtype("uint8"),
@@ -173,9 +173,9 @@ def test_header_dtypes_single_level(ph256_run, tmp_path):
         "tv_usec":   np.dtype("uint32"),
     }
     for field, expected_dtype in expected.items():
-        if field in headers:
-            assert headers[field].dtype == expected_dtype, (
-                f"headers/{field}: got {headers[field].dtype}, expected {expected_dtype}"
+        if field in store:
+            assert store[field].dtype == expected_dtype, (
+                f"{field}: got {store[field].dtype}, expected {expected_dtype}"
             )
 
 
@@ -187,18 +187,17 @@ def test_header_dtypes_module_level(img16_run, tmp_path):
     stores = convert_run(run, tmp_path / "out")
 
     store = zarr.open_group(str(stores[0]), mode="r")
-    q0 = store["headers"]["quabo_0"]
-
-    assert q0["pkt_num"].dtype == np.dtype("uint32")
-    assert q0["pkt_tai"].dtype == np.dtype("uint16")
-    assert q0["pkt_nsec"].dtype == np.dtype("uint32")
-    assert q0["tv_sec"].dtype == np.dtype("int64")
-    assert q0["tv_usec"].dtype == np.dtype("uint32")
+    # Module-level headers are flat: "quabo_0.pkt_num" → "quabo_0_pkt_num"
+    assert store["quabo_0_pkt_num"].dtype == np.dtype("uint32")
+    assert store["quabo_0_pkt_tai"].dtype == np.dtype("uint16")
+    assert store["quabo_0_pkt_nsec"].dtype == np.dtype("uint32")
+    assert store["quabo_0_tv_sec"].dtype == np.dtype("int64")
+    assert store["quabo_0_tv_usec"].dtype == np.dtype("uint32")
 
 
 # ── module-level header structure ─────────────────────────────────────────────
 
-def test_module_header_subgroups(img16_run, tmp_path):
+def test_module_header_flat_names(img16_run, tmp_path):
     from pypff.io2 import PanosetiRun
     from pypff.zarr import convert_run
 
@@ -206,15 +205,13 @@ def test_module_header_subgroups(img16_run, tmp_path):
     stores = convert_run(run, tmp_path / "out")
 
     store = zarr.open_group(str(stores[0]), mode="r")
-    headers = store["headers"]
 
-    # All four quabo sub-groups present
+    # All four quabo field sets present as flat root-level arrays
     for qi in range(4):
-        assert f"quabo_{qi}" in headers, f"headers/quabo_{qi} missing"
-        assert "pkt_num" in headers[f"quabo_{qi}"]
+        assert f"quabo_{qi}_pkt_num" in store, f"quabo_{qi}_pkt_num missing"
 
-    # No quabo_num at top level (that's single-level only)
-    assert "quabo_num" not in headers
+    # quabo_num is single-level only; not present in module-level stores
+    assert "quabo_num" not in store
 
 
 # ── ZarrWriter protocol ───────────────────────────────────────────────────────
@@ -287,8 +284,170 @@ def test_xarray_open(ph256_run, tmp_path):
     stores = convert_run(run, tmp_path / "out")
 
     import xarray as xr
-    ds = xr.open_zarr(str(stores[0]))
+    ds = xr.open_zarr(str(stores[0]), consolidated=False)
     assert "images" in ds
     assert "unix_t_ns" in ds
     assert ds.images.dims == ("time", "y", "x")
     assert ds["unix_t_ns"].dtype == np.dtype("int64")
+    # Header arrays must appear as dataset variables (flat root-level layout)
+    assert "pkt_num" in ds
+    assert "quabo_num" in ds
+    assert ds["pkt_num"].dims == ("time",)
+    assert ds["pkt_num"].dtype == np.dtype("uint32")
+
+
+# ── discoverability attrs ─────────────────────────────────────────────────────
+
+def test_header_fields_single_level(ph256_run, tmp_path):
+    from pypff.io2 import PanosetiRun
+    from pypff.zarr import convert_run
+
+    run = PanosetiRun(ph256_run)
+    stores = convert_run(run, tmp_path / "out")
+
+    attrs = dict(zarr.open_group(str(stores[0]), mode="r").attrs)
+    assert "header_fields" in attrs
+    assert "quabo_fields" in attrs
+    hf = set(attrs["header_fields"])
+    assert hf == {"pkt_num", "pkt_tai", "pkt_nsec", "tv_sec", "tv_usec", "quabo_num"}
+    assert attrs["quabo_fields"] == []  # ph256 has no per-quabo fields
+
+
+def test_header_fields_module_level(img16_run, tmp_path):
+    from pypff.io2 import PanosetiRun
+    from pypff.zarr import convert_run
+
+    run = PanosetiRun(img16_run)
+    stores = convert_run(run, tmp_path / "out")
+
+    attrs = dict(zarr.open_group(str(stores[0]), mode="r").attrs)
+    qf = set(attrs["quabo_fields"])
+    # All four quabos × 5 fields = 20
+    assert len(qf) == 20
+    assert "quabo_0_pkt_num" in qf
+    assert "quabo_3_tv_usec" in qf
+    assert attrs["header_fields"] == []  # module-level has no single-level fields
+
+
+# ── run_configs embedding ─────────────────────────────────────────────────────
+
+def test_run_configs_embedded(tmp_path):
+    """Configs written alongside .pff files are embedded in zarr root attrs."""
+    import json
+    from pypff.io2 import PanosetiRun
+    from pypff.zarr import convert_run
+
+    run_dir = tmp_path / "conf_test.pffd"
+    run_dir.mkdir()
+    _make_ph256_pff(
+        run_dir / "start_2024-01-01T00:00:00Z.dp_ph256.bpp_2.module_1.seqno_0.pff",
+        n_frames=5,
+    )
+    # Use a filename that PanosetiRun stores as a raw dict (not a known Pydantic model)
+    sw_cfg = {"version": "1.2.3", "build": "release"}
+    (run_dir / "sw_info.json").write_text(json.dumps(sw_cfg))
+
+    run = PanosetiRun(run_dir)
+    stores = convert_run(run, tmp_path / "out", embed_configs=True)
+
+    attrs = dict(zarr.open_group(str(stores[0]), mode="r").attrs)
+    assert "run_configs" in attrs
+    assert "sw_info" in attrs["run_configs"]
+    assert attrs["run_configs"]["sw_info"]["version"] == "1.2.3"
+
+
+# ── sidecar bundle ────────────────────────────────────────────────────────────
+
+def test_sidecar_bundle_written(tmp_path):
+    import json
+    from pypff.io2 import PanosetiRun
+    from pypff.zarr import convert_run
+
+    run_dir = tmp_path / "sc_test.pffd"
+    run_dir.mkdir()
+    _make_ph256_pff(
+        run_dir / "start_2024-01-01T00:00:00Z.dp_ph256.bpp_2.module_1.seqno_0.pff",
+        n_frames=5,
+    )
+    (run_dir / "obs_config.json").write_text('{"obs_name": "Test"}')
+    (run_dir / "log.txt").write_text("run started\n")
+    (run_dir / "collect_complete").write_text("")  # sentinel
+
+    run = PanosetiRun(run_dir)
+    convert_run(run, tmp_path / "out", write_sidecars=True)
+
+    meta_dirs = list((tmp_path / "out").glob("*.panoseti-meta"))
+    assert len(meta_dirs) == 1
+    meta = meta_dirs[0]
+    assert (meta / "manifest.json").exists()
+    assert (meta / "configs" / "obs_config.json").exists()
+    assert (meta / "logs" / "log.txt").exists()
+    assert (meta / "sentinels" / "collect_complete").exists()
+
+
+def test_sidecar_bundle_skipped(tmp_path):
+    from pypff.io2 import PanosetiRun
+    from pypff.zarr import convert_run
+
+    run_dir = tmp_path / "nosc_test.pffd"
+    run_dir.mkdir()
+    _make_ph256_pff(
+        run_dir / "start_2024-01-01T00:00:00Z.dp_ph256.bpp_2.module_1.seqno_0.pff",
+        n_frames=5,
+    )
+    run = PanosetiRun(run_dir)
+    convert_run(run, tmp_path / "out", write_sidecars=False)
+
+    meta_dirs = list((tmp_path / "out").glob("*.panoseti-meta"))
+    assert len(meta_dirs) == 0
+
+
+# ── PanosetiZarrRun read-side wrapper ────────────────────────────────────────
+
+def test_panoseti_zarr_run(ph256_run, tmp_path):
+    import json
+    from pypff.io2 import PanosetiRun
+    from pypff.zarr import convert_run, PanosetiZarrRun
+
+    # Use a raw-dict config (sw_info is not a known Pydantic model → stored as dict)
+    (ph256_run / "sw_info.json").write_text(json.dumps({"obs_name": "RoundtripTest"}))
+
+    run = PanosetiRun(ph256_run)
+    out = tmp_path / "zrun_out"
+    convert_run(run, out, write_sidecars=True, embed_configs=True)
+
+    zrun = PanosetiZarrRun(out)
+    products = zrun.list_products()
+    assert len(products) == 1
+    assert "dp_ph256" in products[0]
+
+    store = zrun.get_product(products[0])
+    assert store.data_product == "ph256"
+    assert len(store) == 40
+    assert store.timestamps().dtype == np.dtype("int64")
+    assert store.header_fields != []
+    assert store.quabo_fields == []
+
+    # configs sourced from sidecar directory
+    cfgs = zrun.configs
+    assert "sw_info" in cfgs
+    assert cfgs["sw_info"]["obs_name"] == "RoundtripTest"
+
+
+# ── no ZarrUserWarning during conversion ─────────────────────────────────────
+
+def test_no_zarr_user_warning(ph256_run, tmp_path):
+    """convert_run must not emit ZarrUserWarning (consolidated metadata warning)."""
+    import warnings
+    from zarr.errors import MetadataValidationError  # noqa: F401 (ensure zarr imported)
+    from pypff.io2 import PanosetiRun
+    from pypff.zarr import convert_run
+
+    run = PanosetiRun(ph256_run)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        convert_run(run, tmp_path / "warn_out")
+
+    zarr_warnings = [w for w in caught if issubclass(w.category, UserWarning)
+                     and "consolidated" in str(w.message).lower()]
+    assert zarr_warnings == [], f"Unexpected ZarrUserWarning(s): {zarr_warnings}"
