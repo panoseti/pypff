@@ -1,7 +1,7 @@
-# pypff - Modernized PanoSETI I/O Library
+# pypff - High-performance PanoSETI I/O Library
 
 [![pypff-CI](https://github.com/panoseti/pypff/actions/workflows/egg.yml/badge.svg)](https://github.com/panoseti/pypff/actions)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/panoseti/pypff)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/panoseti/pypff)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Coverage](https://img.shields.io/badge/coverage-65%25-green)](https://github.com/panoseti/pypff)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
