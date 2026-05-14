@@ -1,6 +1,6 @@
 [build-system]
 requires = ["hatchling"]
-build-backend = "hatchling.build_meta"
+build-backend = "hatchling.build"
 
 [project]
 name = "pypff"
@@ -35,6 +35,10 @@ dependencies = [
     "plotly",
     "tqdm",
     "typer>=0.9.0",
+    "zarr>=3.0",
+    "numcodecs>=0.12",
+    "dask[distributed]>=2024.1",
+    "xarray>=2024.1",
 ]
 
 [project.urls]
@@ -49,6 +53,7 @@ dev = [
     "ruff",
     "mypy",
     "dask",
+    "hatchling",
 ]
 zarr = [
     "zarr>=3.0",
