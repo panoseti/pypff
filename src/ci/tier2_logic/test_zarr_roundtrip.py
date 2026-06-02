@@ -455,3 +455,32 @@ def test_no_zarr_user_warning(ph256_run: Path, tmp_path: Path) -> None:
     zarr_warnings = [w for w in caught if issubclass(w.category, UserWarning)
                      and "consolidated" in str(w.message).lower()]
     assert zarr_warnings == [], f"Unexpected ZarrUserWarning(s): {zarr_warnings}"
+
+
+# ── SHARDING / CHUNK-SIZE TESTS ──────────────────────────────────────────────
+
+class TestChunkSizes:
+    """Verify 1D arrays use dtype-aware ~8 MB chunk targets, not the old C*2 formula."""
+
+    def test_1d_scalar_chunk_is_at_least_65536(self, img16_run: Path, tmp_path: Path) -> None:
+        """unix_t_ns and header arrays must use >=65536 frame chunks for img16."""
+        from pypff.zarr import convert_run
+        from pypff.io2 import PanosetiRun
+        stores = convert_run(PanosetiRun(img16_run), tmp_path)
+        z = zarr.open_group(str(stores[0]), mode="r", zarr_format=3)
+        # All 1D arrays should have chunks >= 65536 (old value was C*2 = 8192 for img16)
+        for name in z.array_keys():
+            a = z[name]
+            if a.ndim == 1:
+                assert a.chunks[0] >= 65536, (
+                    f"1D array '{name}' chunk={a.chunks[0]} < 65536 (dtype-aware target)"
+                )
+
+    def test_images_chunk_unchanged(self, img16_run: Path, tmp_path: Path) -> None:
+        """Image array chunk must still be ~8 MB (4096 for img16)."""
+        from pypff.zarr import convert_run
+        from pypff.io2 import PanosetiRun
+        stores = convert_run(PanosetiRun(img16_run), tmp_path)
+        z = zarr.open_group(str(stores[0]), mode="r", zarr_format=3)
+        assert z["images"].chunks[0] == 4096, "img16 image chunk must remain 4096"
+        assert z["images"].chunks[1:] == (32, 32)

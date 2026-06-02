@@ -319,7 +319,10 @@ class PFFToZarrConverter:
         T = len(seq)
         H, W = conf.image_shape
         C = self.time_chunk
-        ts_chunk = C * 2
+        # Cap 1D chunks at 65536 frames (512 KB for int64, scales down for narrower dtypes).
+        # The divisor 8 targets the widest dtype (int64) so the cap is conservative for all
+        # current fields. Floor at C keeps ts_chunk stride-aligned with image chunks.
+        ts_chunk = max(C, min(65536, _IMG_CHUNK_BYTES_TARGET // 8))
 
         root = writer.create_store(out_path)
         writer.set_attrs(root, self._root_attrs())
