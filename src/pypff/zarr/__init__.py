@@ -138,8 +138,9 @@ class ZarrWriter(Protocol):
         chunks: tuple[int, ...],
         dtype: np.dtype,
         dimension_names: list[str] | None = None,
+        shards: tuple[int, ...] | None = None,
     ) -> _zarr.Array[Any]:
-        """Create an array inside *root_group*. *name* may use '/' for nesting."""
+        """Create an array inside *root_group*. *shards* enables ShardingCodec if not None."""
         ...
 
     def write_slice(
@@ -199,6 +200,7 @@ class ZarrPythonWriter:
         chunks: tuple[int, ...],
         dtype: np.dtype,
         dimension_names: list[str] | None = None,
+        shards: tuple[int, ...] | None = None,
     ) -> _zarr.Array[Any]:
         import zarr
         group: zarr.Group = root_group  # type: ignore[assignment]
@@ -212,6 +214,8 @@ class ZarrPythonWriter:
 
         compressor = self._compressor()
         kwargs: dict[str, Any] = {"shape": shape, "chunks": chunks, "dtype": dtype}
+        if shards is not None:
+            kwargs["shards"] = shards
         if compressor is not None:
             kwargs["compressors"] = [compressor]
         # zarr v3 stores dimension_names in array metadata; xarray reads this
@@ -251,6 +255,7 @@ class PFFToZarrConverter:
         codec: str = "zstd",
         level: int = 3,
         run_configs: dict[str, Any] | None = None,
+        shard_factor: int = 0,
     ) -> None:
         from ..io2 import PFFSequence as _PFFSeq
         if not isinstance(seq, _PFFSeq) or seq.frame_config is None:
@@ -264,6 +269,7 @@ class PFFToZarrConverter:
             bpf = max(conf.payload_size, 1)
             time_chunk = max(256, min(32768, _IMG_CHUNK_BYTES_TARGET // bpf))
         self.time_chunk = time_chunk
+        self.shard_factor = shard_factor
 
     def _field_dtype(self, meta_key: str) -> np.dtype:
         leaf = meta_key.rsplit(".", 1)[-1]
@@ -323,14 +329,23 @@ class PFFToZarrConverter:
         # The divisor 8 targets the widest dtype (int64) so the cap is conservative for all
         # current fields. Floor at C keeps ts_chunk stride-aligned with image chunks.
         ts_chunk = max(C, min(65536, _IMG_CHUNK_BYTES_TARGET // 8))
+        SF = self.shard_factor
+
+        # Shard shapes: None when sharding disabled, else SF inner chunks per shard file.
+        img_shard: tuple[int, ...] | None = (C * SF, H, W) if SF > 0 else None
+        ts_shard: tuple[int, ...] | None = (ts_chunk * SF,) if SF > 0 else None
 
         root = writer.create_store(out_path)
-        writer.set_attrs(root, self._root_attrs())
+        attrs = self._root_attrs()
+        if SF > 0:
+            attrs["shard_factor"] = SF
+        writer.set_attrs(root, attrs)
 
         # ── images ──────────────────────────────────────────────
         img_arr = writer.create_array(
             root, "images", (T, H, W), (C, H, W), conf.dtype,
             dimension_names=["time", "y", "x"],
+            shards=img_shard,
         )
         writer.set_attrs(img_arr, {
             "_ARRAY_DIMENSIONS": ["time", "y", "x"],  # zarr v2 compat
@@ -342,6 +357,7 @@ class PFFToZarrConverter:
         ts_arr = writer.create_array(
             root, "unix_t_ns", (T,), (ts_chunk,), np.dtype("int64"),
             dimension_names=["time"],
+            shards=ts_shard,
         )
         writer.set_attrs(ts_arr, {
             "_ARRAY_DIMENSIONS": ["time"],
@@ -361,6 +377,7 @@ class PFFToZarrConverter:
             arr = writer.create_array(
                 root, zarr_name, (T,), (ts_chunk,), dtype,
                 dimension_names=["time"],
+                shards=ts_shard,
             )
             writer.set_attrs(arr, {
                 "_ARRAY_DIMENSIONS": ["time"],
@@ -462,6 +479,7 @@ def convert_run(
     codec: str = "zstd",
     level: int = 3,
     time_chunk: int | None = None,
+    shard_factor: int = 0,
     writer: ZarrWriter | None = None,
     write_sidecars: bool = True,
     embed_configs: bool = True,
@@ -487,6 +505,10 @@ def convert_run(
         Compression level (codec-specific; 3 is a good default for zstd).
     time_chunk:
         Frames per time chunk. Auto-sized to ~8 MB pre-compression if omitted.
+    shard_factor:
+        Number of inner chunks per shard file (ShardingCodec). ``0`` (default)
+        disables sharding. Recommended value for BeeGFS/Expanse: ``16`` (~78x
+        file-count reduction for img16). Stamped into each store's root attrs.
     writer:
         Custom ``ZarrWriter`` backend. Defaults to ``ZarrPythonWriter``.
     write_sidecars:
@@ -514,7 +536,10 @@ def convert_run(
         zarr_name = f"{run_base}.{product_name}.zarr"
         out_path = out_dir / zarr_name
         w = writer or ZarrPythonWriter(codec=codec, level=level)
-        conv = PFFToZarrConverter(seq, w, time_chunk=time_chunk, run_configs=run_configs)
+        conv = PFFToZarrConverter(
+            seq, w, time_chunk=time_chunk, run_configs=run_configs,
+            shard_factor=shard_factor,
+        )
         stores.append(conv.convert(out_path))
 
     if write_sidecars:
