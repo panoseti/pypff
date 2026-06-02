@@ -291,7 +291,7 @@ class PFFToZarrConverter:
             zarr_name = key.replace(".", "_")
             (quabo_fields if "." in key else header_fields).append(zarr_name)
         attrs: dict[str, Any] = {
-            "panoseti_pff_zarr_version": "1.0",
+            "panoseti_pff_zarr_version": "1.1",
             "data_product": str(seq.meta.get("dp", "unknown")),
             "bytes_per_pixel": conf.bytes_per_pixel,
             "module": str(seq.meta.get("module", "unknown")),

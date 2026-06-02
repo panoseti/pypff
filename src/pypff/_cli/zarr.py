@@ -17,6 +17,15 @@ def convert(
     time_chunk: Annotated[
         int, typer.Option(help="Frames per time chunk (0 = auto-size to ~8 MB)")
     ] = 0,
+    shard_factor: Annotated[
+        int, typer.Option(
+            "--shard-factor",
+            help=(
+                "Inner chunks per shard file (0 = no sharding). "
+                "Recommended: 16 for BeeGFS/HPC to reduce file count ~78x."
+            )
+        )
+    ] = 0,
 ) -> None:
     """Convert all data products in a .pffd observation directory to Zarr v3 stores."""
     from pypff.io2 import PanosetiRun
@@ -38,7 +47,8 @@ def convert(
         typer.echo(f"  {p}: {len(seq):,} frames")
 
     chunk = time_chunk if time_chunk > 0 else None
-    stores = convert_run(run, out_dir, codec=codec, level=level, time_chunk=chunk)
+    stores = convert_run(run, out_dir, codec=codec, level=level,
+                         time_chunk=chunk, shard_factor=shard_factor)
 
     typer.echo(f"\nWrote {len(stores)} Zarr store(s) to {out_dir}:")
     for s in stores:

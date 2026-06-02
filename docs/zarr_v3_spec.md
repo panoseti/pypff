@@ -1,8 +1,8 @@
 # PanoSETI PFF → Zarr v3 Specification
 
-**Version**: 1.0  
+**Version**: 1.1  
 **Status**: Active  
-**`panoseti_pff_zarr_version`**: `"1.0"`
+**`panoseti_pff_zarr_version`**: `"1.1"`
 
 This document defines the Zarr v3 storage layout produced by `pypff.zarr.convert_run`
 and read by `pypff.zarr.PanosetiZarrRun` / `PanosetiZarrStore`.
@@ -116,7 +116,7 @@ The root group's `zarr.json` MUST contain:
 
 | Attribute | Type | Description |
 |---|---|---|
-| `panoseti_pff_zarr_version` | `str` | Spec version — `"1.0"` |
+| `panoseti_pff_zarr_version` | `str` | Spec version — `"1.1"` |
 | `data_product` | `str` | Data product type (e.g. `"ph256"`, `"img16"`) |
 | `bytes_per_pixel` | `int` | Bytes per pixel |
 | `module` | `str` | Module identifier |
@@ -132,6 +132,7 @@ Optional root attributes:
 | Attribute | Type | Description |
 |---|---|---|
 | `run_configs` | `dict` | Parsed run configs embedded at conversion time |
+| `shard_factor` | `int` | Inner chunks per shard (present only when `shard_factor > 0`) |
 
 ---
 
@@ -193,8 +194,34 @@ Override via `convert_run(time_chunk=N)`.
 
 ### 1-D arrays (timestamps, headers)
 
-Chunk size = `C × 2`, so each image chunk aligns with half a header/timestamp
-chunk for efficient joint time-range reads.
+Since v1.1: `ts_chunk = max(C, min(65536, 8_MB // 8)) = 65536` for all current dtypes.
+This caps at 65536 frames (~512 KB for int64) and floors at the image chunk C for stride alignment.
+
+Prior to v1.1, `ts_chunk = C * 2` (e.g., 8192 for img16) produced 64 KB chunks for int64 —
+125× smaller than the 8 MB target, generating excessive file counts.
+
+### Sharding (optional, recommended for HPC)
+
+When `convert_run(shard_factor=N)` with N > 0, a `ShardingCodec` wraps each array so
+that N inner chunks are stored in one physical shard file:
+
+| Array | Inner chunk | Shard (N=16) | Shard size (img16, ~3:1 zstd) |
+|---|---|---|---|
+| `images` | `(C, H, W)` | `(C×N, H, W)` | ~40 MB |
+| 1-D arrays | `(ts_chunk,)` | `(ts_chunk×N,)` | ~8 MB |
+
+**Recommended values:**
+
+| Platform | `shard_factor` | Effect on img16 (13.6M frames) |
+|---|---|---|
+| Laptop / test | 0 (no sharding) | ~38K files |
+| BeeGFS / RAL | 16 | ~468 files (78× fewer) |
+| Expanse (SDSC) | 16 | ~468 files (required: 2M file quota) |
+
+The `shard_factor` value is stamped into root attrs under the key `"shard_factor"`.
+Readers do not need to read this attr — zarr-python handles sharding transparently.
+All zarr-python ≥ 3.0 readers (xarray, dask, TensorStore, zarrs) handle sharded stores
+identically to unsharded stores.
 
 ---
 
@@ -248,7 +275,7 @@ schema:
 - **Minor** (1.x.0): new required arrays or attrs; old readers still open stores safely.
 - **Major** (x.0.0): breaking layout change.  Readers MUST refuse to open stores whose major version exceeds their supported major version.
 
-Version `"1.0"` (this document) is the initial production release.
+Version `"1.1"` (this document) is the current production release.
 
 ---
 
@@ -257,3 +284,4 @@ Version `"1.0"` (this document) is the initial production release.
 | Version | Date | Changes |
 |---|---|---|
 | 1.0 | 2026-05-13 | Initial release. Flat root layout; `header_fields` / `quabo_fields` discoverability; `run_configs` embedding; `.panoseti-meta/` sidecar bundle. |
+| 1.1 | 2026-06-02 | Dtype-aware 1D chunk sizes (`ts_chunk` = 65536 for img16, was 8192). Optional `shard_factor` parameter on `convert_run` and CLI. `shard_factor` attr added to root when non-zero. |
