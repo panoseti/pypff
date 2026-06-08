@@ -316,13 +316,13 @@ class TensorstoreWriter:
             'kvstore': {'driver': 'file', 'path': str(self._path / name)},
         }
         ts_arr = ts.open(spec).result()
-        self._ts_arrays[z_arr] = ts_arr
+        self._ts_arrays[z_arr.path] = ts_arr
         return z_arr
 
     def write_slice(
         self, array: _zarr.Array[Any], slices: tuple[slice, ...], data: np.ndarray
     ) -> None:
-        ts_arr = self._ts_arrays[array]
+        ts_arr = self._ts_arrays[array.path]
         future = ts_arr[slices].write(data)
         self._futures.append(future)
 
