@@ -60,6 +60,7 @@ zarr = [
     "numcodecs>=0.12",
     "dask[distributed]>=2024.1",
     "xarray>=2024.1",
+    "tensorstore>=0.1.84",
 ]
 
 [project.scripts]

@@ -86,6 +86,7 @@ __all__ = [
     "PFFToZarrConverter",
     "PanosetiZarrRun",
     "PanosetiZarrStore",
+    "TensorstoreWriter",
     "ZarrPythonWriter",
     "ZarrWriter",
     "convert_run",
@@ -190,7 +191,7 @@ class ZarrPythonWriter:
         import zarr
         if path.exists():
             shutil.rmtree(path)
-        return zarr.open_group(str(path), mode="w", zarr_format=3)  # type: ignore[return-value]
+        return zarr.open_group(str(path), mode="w", zarr_format=3)
 
     def create_array(
         self,
@@ -203,7 +204,7 @@ class ZarrPythonWriter:
         shards: tuple[int, ...] | None = None,
     ) -> _zarr.Array[Any]:
         import zarr
-        group: zarr.Group = root_group  # type: ignore[assignment]
+        group: zarr.Group = root_group
         # Support nested path: "a/b/c" → group "a/b", array "c"
         parts = name.rsplit("/", 1)
         if len(parts) == 2:
@@ -221,20 +222,125 @@ class ZarrPythonWriter:
         # zarr v3 stores dimension_names in array metadata; xarray reads this
         if dimension_names is not None:
             kwargs["dimension_names"] = dimension_names
-        return group.create_array(array_name, **kwargs)  # type: ignore[return-value]
+        return group.create_array(array_name, **kwargs)
 
     def write_slice(
         self, array: _zarr.Array[Any], slices: tuple[slice, ...], data: np.ndarray
     ) -> None:
-        array[slices] = data  # type: ignore[index]
+        array[slices] = data
 
     def set_attrs(self, obj: _zarr.Group | _zarr.Array[Any], attrs: dict[str, Any]) -> None:
-        obj.attrs.update(attrs)  # type: ignore[union-attr]
+        obj.attrs.update(attrs)
 
     def finalize(self, path: Path) -> None:
         # Zarr v3 consolidated metadata is not part of the spec and emits
         # ZarrUserWarning in zarr-python 3.2+.  Skip by default; enable via
         # consolidate=True if open-time latency on S3 is a concern.
+        if self._consolidate:
+            import zarr
+            with contextlib.suppress(Exception):
+                zarr.consolidate_metadata(str(path))
+
+
+# ── TensorstoreWriter ────────────────────────────────────────────────────────
+
+class TensorstoreWriter:
+    """Tensorstore backend for high-throughput Zarr v3 writing."""
+
+    def __init__(self, codec: str = "zstd", level: int = 3, *, consolidate: bool = False) -> None:
+        self._codec = codec
+        self._level = level
+        self._consolidate = consolidate
+        self._futures: list[Any] = []
+        self._ts_arrays: dict[Any, Any] = {}
+        self._path: Path | None = None
+
+    def create_store(self, path: Path) -> _zarr.Group:
+        import shutil
+
+        import zarr
+        if path.exists():
+            shutil.rmtree(path)
+        self._path = Path(path)
+        return zarr.open_group(str(path), mode="w", zarr_format=3)
+
+    def create_array(
+        self,
+        root_group: _zarr.Group,
+        name: str,
+        shape: tuple[int, ...],
+        chunks: tuple[int, ...],
+        dtype: np.dtype,
+        dimension_names: list[str] | None = None,
+        shards: tuple[int, ...] | None = None,
+    ) -> _zarr.Array[Any]:
+        import tensorstore as ts
+        import zarr
+
+        group: zarr.Group = root_group
+        parts = name.rsplit("/", 1)
+        if len(parts) == 2:
+            group = group.require_group(parts[0])
+            array_name = parts[1]
+        else:
+            array_name = name
+
+        try:
+            import zarr.codecs as zc
+        except ImportError as exc:
+            raise ImportError(
+                "zarr is not installed. Run: pip install pypff[zarr]"
+            ) from exc
+
+        compressor = None
+        if self._codec == "zstd":
+            compressor = zc.ZstdCodec(level=self._level)
+        elif self._codec in ("blosc-lz4", "blosc"):
+            compressor = zc.BloscCodec(cname="lz4", clevel=self._level, shuffle="shuffle")
+        elif self._codec == "gzip":
+            compressor = zc.GzipCodec(level=self._level)
+
+        kwargs: dict[str, Any] = {"shape": shape, "chunks": chunks, "dtype": dtype}
+        if shards is not None:
+            kwargs["shards"] = shards
+        if compressor is not None:
+            kwargs["compressors"] = [compressor]
+        if dimension_names is not None:
+            kwargs["dimension_names"] = dimension_names
+
+        z_arr = group.create_array(array_name, **kwargs)
+
+        assert self._path is not None
+        spec = {
+            'driver': 'zarr3',
+            'kvstore': {'driver': 'file', 'path': str(self._path / name)},
+        }
+        ts_arr = ts.open(spec).result()
+        self._ts_arrays[z_arr] = ts_arr
+        return z_arr
+
+    def write_slice(
+        self, array: _zarr.Array[Any], slices: tuple[slice, ...], data: np.ndarray
+    ) -> None:
+        ts_arr = self._ts_arrays[array]
+        future = ts_arr[slices].write(data)
+        self._futures.append(future)
+
+        # Periodically resolve futures to bound memory usage
+        if len(self._futures) > 1000:
+            for f in self._futures:
+                f.result()
+            self._futures.clear()
+
+    def set_attrs(self, obj: _zarr.Group | _zarr.Array[Any], attrs: dict[str, Any]) -> None:
+        obj.attrs.update(attrs)
+
+    def finalize(self, path: Path) -> None:
+        for f in self._futures:
+            f.result()
+        self._futures.clear()
+        self._ts_arrays.clear()
+
         if self._consolidate:
             import zarr
             with contextlib.suppress(Exception):
@@ -483,6 +589,8 @@ def convert_run(
     writer: ZarrWriter | None = None,
     write_sidecars: bool = True,
     embed_configs: bool = True,
+    use_tensorstore: bool = False,
+    max_workers: int | None = None,
 ) -> list[Path]:
     """
     Convert every data product in a PanosetiRun to a Zarr v3 store.
@@ -518,6 +626,10 @@ def convert_run(
     embed_configs:
         Embed parsed run configs as ``run_configs`` in each store's root attrs,
         making each ``.zarr`` self-contained for analysis.
+    use_tensorstore:
+        If True, use TensorstoreWriter for faster, multithreaded array writing.
+    max_workers:
+        If provided, convert this many data products in parallel.
 
     Returns
     -------
@@ -530,17 +642,33 @@ def convert_run(
 
     run_configs = _extract_run_configs(run) if embed_configs else {}
 
-    stores: list[Path] = []
-    for product_name in run.list_products():
+    def _convert_product(product_name: str) -> Path:
         seq = run.get_product(product_name)
         zarr_name = f"{run_base}.{product_name}.zarr"
         out_path = out_dir / zarr_name
-        w = writer or ZarrPythonWriter(codec=codec, level=level)
+        
+        if writer is not None:
+            w = writer
+        elif use_tensorstore:
+            w = TensorstoreWriter(codec=codec, level=level)
+        else:
+            w = ZarrPythonWriter(codec=codec, level=level)
+
         conv = PFFToZarrConverter(
             seq, w, time_chunk=time_chunk, run_configs=run_configs,
             shard_factor=shard_factor,
         )
-        stores.append(conv.convert(out_path))
+        return conv.convert(out_path)
+
+    stores: list[Path] = []
+    
+    if max_workers is not None and max_workers > 1:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            stores = list(executor.map(_convert_product, run.list_products()))
+    else:
+        for product_name in run.list_products():
+            stores.append(_convert_product(product_name))
 
     if write_sidecars:
         meta_dir = out_dir / f"{run_base}.panoseti-meta"
