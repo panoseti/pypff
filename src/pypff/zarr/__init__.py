@@ -64,6 +64,7 @@ Run-level output layout under out_dir/
 """
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import shutil
@@ -78,8 +79,8 @@ if TYPE_CHECKING:
     from ..io2 import PanosetiRun, PFFSequence
 
 # Re-export read-side wrappers so callers only need to import from pypff.zarr
-import contextlib
-
+from ._dtypes import _HEADER_DTYPES
+from ._inmem import sequence_to_dataset
 from ._reader import PanosetiZarrRun, PanosetiZarrStore, open_zarr_run
 
 __all__ = [
@@ -91,6 +92,7 @@ __all__ = [
     "ZarrWriter",
     "convert_run",
     "open_zarr_run",
+    "sequence_to_dataset",
 ]
 
 # ── dtype table ──────────────────────────────────────────────────────────────
@@ -102,14 +104,7 @@ __all__ = [
 #   pkt_nsec:  0 - 999,999,999
 #   tv_usec:   0 - 999,999
 #   tv_sec:    unix seconds (int64 for future-safety)
-_HEADER_DTYPES: dict[str, np.dtype] = {
-    "quabo_num": np.dtype("uint8"),
-    "pkt_num":   np.dtype("uint32"),
-    "pkt_tai":   np.dtype("uint16"),
-    "pkt_nsec":  np.dtype("uint32"),
-    "tv_sec":    np.dtype("int64"),
-    "tv_usec":   np.dtype("uint32"),
-}
+# Imported at the top of the file from ._dtypes
 
 _IMG_CHUNK_BYTES_TARGET = 8 * 1024 * 1024  # 8 MB pre-compression per time chunk
 
