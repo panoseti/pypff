@@ -8,29 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All commands assume `uv sync` has been run first.
-
-```bash
-uv sync                          # Install all dependencies
-uv run pypff test all            # Run full test suite (unit + logic + legacy)
-uv run pypff test unit           # Tier 1 unit tests only
-uv run pypff test logic          # Tier 2 logic/IO tests only
-uv run pypff test legacy         # Legacy integration tests only
-uv run pypff test all --lint     # Also run Ruff + MyPy
-uv run pypff test all --cov      # With coverage reporting
-```
-
-Run a single test file directly:
-```bash
-uv run pytest src/ci/tier1_unit/test_utils.py
-uv run pytest src/ci/tier2_logic/test_io.py::test_name
-```
-
-Lint manually:
-```bash
-uv run ruff check .
-uv run mypy src
-```
+_See [`docs/development.md`](docs/development.md) for setup, test, and lint commands._
 
 ## Architecture
 

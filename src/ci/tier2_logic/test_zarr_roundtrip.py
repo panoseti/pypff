@@ -455,3 +455,117 @@ def test_no_zarr_user_warning(ph256_run: Path, tmp_path: Path) -> None:
     zarr_warnings = [w for w in caught if issubclass(w.category, UserWarning)
                      and "consolidated" in str(w.message).lower()]
     assert zarr_warnings == [], f"Unexpected ZarrUserWarning(s): {zarr_warnings}"
+
+
+# ── SHARDING / CHUNK-SIZE TESTS ──────────────────────────────────────────────
+
+class TestChunkSizes:
+    """Verify 1D arrays use dtype-aware ~8 MB chunk targets, not the old C*2 formula."""
+
+    def test_1d_scalar_chunk_is_at_least_65536(self, img16_run: Path, tmp_path: Path) -> None:
+        """unix_t_ns and header arrays must use >=65536 frame chunks for img16."""
+        from pypff.io2 import PanosetiRun
+        from pypff.zarr import convert_run
+        stores = convert_run(PanosetiRun(img16_run), tmp_path)
+        z = zarr.open_group(str(stores[0]), mode="r", zarr_format=3)
+        # All 1D arrays should have chunks >= 65536 (old value was C*2 = 8192 for img16)
+        for name in z.array_keys():
+            a = z[name]
+            if a.ndim == 1:
+                assert a.chunks[0] >= 65536, (
+                    f"1D array '{name}' chunk={a.chunks[0]} < 65536 (dtype-aware target)"
+                )
+
+    def test_images_chunk_unchanged(self, img16_run: Path, tmp_path: Path) -> None:
+        """Image array chunk must still be ~8 MB (4096 for img16)."""
+        from pypff.io2 import PanosetiRun
+        from pypff.zarr import convert_run
+        stores = convert_run(PanosetiRun(img16_run), tmp_path)
+        z = zarr.open_group(str(stores[0]), mode="r", zarr_format=3)
+        assert z["images"].chunks[0] == 4096, "img16 image chunk must remain 4096"
+        assert z["images"].chunks[1:] == (32, 32)
+
+
+class TestSharding:
+    """shard_factor=N packs N inner chunks into one shard file."""
+
+    def test_sharding_reduces_file_count(self, img16_run: Path, tmp_path: Path) -> None:
+        """shard_factor=4 must produce fewer image chunk files than shard_factor=0.
+
+        Use time_chunk=3 so the 15-frame fixture produces 5 image chunks; with
+        shard_factor=4 those collapse to 2 shard files.  The 22 1D arrays have only
+        1 chunk each (15 frames < ts_chunk) so their file count is unchanged — we
+        therefore check reduction in image data files specifically, not total files.
+        """
+        from pypff.io2 import PanosetiRun
+        from pypff.zarr import convert_run
+
+        out_unsharded = tmp_path / "unsharded"
+        out_sharded = tmp_path / "sharded"
+        run = PanosetiRun(img16_run)
+        stores_un = convert_run(run, out_unsharded, shard_factor=0, time_chunk=3)
+        stores_sh = convert_run(run, out_sharded, shard_factor=4, time_chunk=3)
+
+        # Count data files only (exclude zarr.json metadata files)
+        img_files_un = sum(
+            1 for f in (stores_un[0] / "images").rglob("*") if f.is_file()
+        )
+        img_files_sh = sum(
+            1 for f in (stores_sh[0] / "images").rglob("*") if f.is_file()
+        )
+        # 5 chunks → 2 shards (4 inner + 1 remainder)
+        assert img_files_sh < img_files_un, (
+            f"Sharded images ({img_files_sh} files) must have fewer files than "
+            f"unsharded ({img_files_un} files)"
+        )
+        assert img_files_sh * 2 <= img_files_un, (
+            f"Expected at least 2x image file reduction with shard_factor=4, "
+            f"got {img_files_un}/{img_files_sh}={img_files_un/img_files_sh:.1f}x"
+        )
+
+    def test_sharded_images_roundtrip(self, img16_run: Path, tmp_path: Path) -> None:
+        """Images written with sharding must read back bit-identical."""
+        from pypff.io2 import PanosetiRun
+        from pypff.zarr import convert_run
+
+        run = PanosetiRun(img16_run)
+        stores = convert_run(run, tmp_path, shard_factor=4)
+        z = zarr.open_group(str(stores[0]), mode="r", zarr_format=3)
+
+        seq = run.get_product(run.list_products()[0])
+        expected = seq.read_images_range(0, len(seq))
+        np.testing.assert_array_equal(z["images"][:], expected)
+
+    def test_sharded_store_opens_with_xarray(self, img16_run: Path, tmp_path: Path) -> None:
+        """Sharded stores must open cleanly with xr.open_zarr."""
+        xr = pytest.importorskip("xarray")
+        from pypff.io2 import PanosetiRun
+        from pypff.zarr import convert_run
+
+        stores = convert_run(PanosetiRun(img16_run), tmp_path, shard_factor=4)
+        ds = xr.open_zarr(str(stores[0]), consolidated=False)
+        assert "images" in ds
+        assert "unix_t_ns" in ds
+        assert ds["unix_t_ns"].dtype == np.int64
+
+    def test_shard_attrs_recorded_in_root(self, img16_run: Path, tmp_path: Path) -> None:
+        """shard_factor must be stamped into the store's root attrs."""
+        from pypff.io2 import PanosetiRun
+        from pypff.zarr import convert_run
+
+        stores = convert_run(PanosetiRun(img16_run), tmp_path, shard_factor=8)
+        z = zarr.open_group(str(stores[0]), mode="r", zarr_format=3)
+        assert z.attrs.get("shard_factor") == 8
+
+    def test_shard_factor_zero_unchanged(self, img16_run: Path, tmp_path: Path) -> None:
+        """shard_factor=0 must not produce a ShardingCodec (pure chunk store)."""
+        from pypff.io2 import PanosetiRun
+        from pypff.zarr import convert_run
+
+        stores = convert_run(PanosetiRun(img16_run), tmp_path, shard_factor=0)
+        z = zarr.open_group(str(stores[0]), mode="r", zarr_format=3)
+        img = z["images"]
+        # No sharding -> shards property is None or equals chunks
+        assert img.shards is None or img.shards == img.chunks, (
+            "shard_factor=0 must not use ShardingCodec"
+        )
