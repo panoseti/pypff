@@ -3,6 +3,8 @@ name: pypff-CI
 on:
   push:
     branches: ["dev", "opt", "master"]
+  pull_request:
+    branches: ["opt"]
 
 jobs:
   pypff-test:
