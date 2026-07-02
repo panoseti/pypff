@@ -12,8 +12,8 @@ A high-performance Python package for reading and analyzing data files generated
 - **Streaming by default:** `iter_batches(size=256)` and `__iter__` yield zero-copy views without materializing the full sequence into RAM — safe for Jupyter and HPC pipelines alike.
 - **Distributed chunked reads:** `iter_byte_range(file_idx, byte_start, byte_end)` lets Dask/Nextflow workers parse frame-aligned byte ranges in parallel without coordination.
 - **Zero-copy random access:** `seq[i]` returns a strided mmap view; slicing and `read_images(indices)` use a sort + inverse-permutation for disk locality.
-- **Single-pass metadata:** `get_metadata_arrays(keys)` extracts any number of header fields in one `np.frombuffer` pass per file via a composite NumPy structured dtype. Supports virtual `unix_t_ns` key.
-- **Nanosecond-precise timestamps:** `timestamps()` returns `int64` ns (no float precision loss); `timestamps(as_datetime=True)` returns a zero-copy `datetime64[ns]` view for matplotlib and pandas.
+- **Single-pass metadata:** `get_metadata_arrays(keys)` and `timestamps_at(indices)` both extract header fields in one `np.frombuffer` pass per file via a composite NumPy structured dtype — both the sequential and indexed paths are fully vectorized. Supports virtual `unix_t_ns` key.
+- **Nanosecond-precise timestamps:** `timestamps()` returns `int64` ns (no float precision loss); `timestamps(as_datetime=True)` returns a zero-copy `datetime64[ns]` view for matplotlib and pandas. `timestamps_at(indices)` provides efficient batched random access.
 - **PFF → Zarr v3 conversion:** `pypff[zarr]` optional extra converts any `.pffd` run to Zarr v3 stores readable by xarray, dask, numpy, TensorStore, and Julia — lossless, compressed, HPC/ML-ready. See [Zarr v3 spec](docs/zarr_v3_spec.md).
 - **Bounded resources:** LRU mmap handle cache (default 16 files); `PFFSequence` is a context manager.
 - **Multiprocessing-safe:** pickle-compatible — file handles are dropped on serialisation and lazily reopened in workers.
@@ -37,6 +37,10 @@ uv sync --extra zarr      # + Zarr v3 conversion (zarr-python, xarray, dask)
 ```
 
 ## Quick Start
+
+> 📓 **Interactive notebook walkthrough:** [`example/pypff_io2_demo.ipynb`](example/pypff_io2_demo.ipynb)
+> covers every API below on live data — streaming, random access, timestamps,
+> metadata extraction, housekeeping, and time-multiplex analysis.
 
 ### Run discovery
 ```python
@@ -93,6 +97,10 @@ ts_sub = seq.timestamps(indices=np.arange(0, len(seq), 100))
 
 # Single frame
 t_ns = seq.timestamp_at(42)               # int, nanoseconds
+
+# Batch random access — vectorized, one np.frombuffer pass per file group
+# Much faster than calling timestamp_at() in a loop
+ts_batch = seq.timestamps_at(np.arange(0, len(seq), 1000))  # np.ndarray[int64]
 
 # Time-based navigation
 idx = seq.seek_time(t_ns + 1_000_000_000)  # 1 s later

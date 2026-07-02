@@ -651,7 +651,8 @@ class PFFSequence:
             inv = np.empty_like(sort_order)
             inv[sort_order] = np.arange(count, dtype=np.int64)
 
-            # Group by file for bulk reads
+            # Group by file for bulk reads — use _composite_extract (vectorized frombuffer)
+            # over the contiguous span [min_local, max_local] and then fancy-index into it.
             raw_results: dict[str, np.ndarray] = {k: np.zeros(count, dtype=np.int64) for k in real_keys}
             for file_idx, _n_frames in enumerate(self._file_frame_counts):
                 file_start = self._cumulative_frames[file_idx - 1] if file_idx > 0 else 0
@@ -663,12 +664,14 @@ class PFFSequence:
                 mm = self._get_mmap(file_idx)
                 if mm is None:
                     continue
+                # Read the contiguous span from min→max local index in one frombuffer call,
+                # then select only the rows we actually need via fancy indexing.
+                lo, hi = int(local_idx.min()), int(local_idx.max()) + 1
+                batch = self._composite_extract(mm, real_keys, lo, hi - lo, conf)
+                where_mask = np.where(mask)[0]
                 for key in real_keys:
-                    if key not in self.metadata_offsets:
-                        continue
-                    ks, ke = self.metadata_offsets[key]
-                    for res_i, li in zip(np.where(mask)[0], local_idx, strict=False):
-                        raw_results[key][res_i] = int(mm[li * conf.frame_size + ks : li * conf.frame_size + ke])
+                    if key in batch:
+                        raw_results[key][where_mask] = batch[key][local_idx - lo]
 
             # Re-order to caller's original order
             for k in real_keys:
@@ -875,6 +878,26 @@ class PFFSequence:
             return int(self._all_timestamps[idx])
         return int(self.get_metadata_arrays([_UNIX_T_NS], indices=[idx])[_UNIX_T_NS][0])
 
+    def timestamps_at(self, indices: Sequence[int] | np.ndarray) -> np.ndarray:
+        """
+        Return precise nanosecond timestamps for multiple frames in one vectorized call.
+
+        Much faster than calling ``timestamp_at`` in a loop — uses a single
+        ``np.frombuffer`` pass per file group rather than per-frame Python byte reads.
+
+        Parameters
+        ----------
+        indices:
+            Frame indices to look up (any order; results match input order).
+
+        Returns
+        -------
+        np.ndarray of int64, shape ``(len(indices),)``.
+        """
+        return self.get_metadata_arrays(
+            [_UNIX_T_NS], indices=np.asarray(indices, dtype=np.int64)
+        )[_UNIX_T_NS]
+
     def seek_time(self, timestamp_ns: int) -> int:
         """
         Return the index of the frame closest to ``timestamp_ns``.
@@ -899,14 +922,17 @@ class PFFSequence:
                 break
             file_idx = i  # keep advancing to last file
 
-        # Lazily build within-file timestamp array
+        # Lazily build within-file timestamp array using the fast sequential path
+        # (_composite_extract) rather than the indexed path to avoid Python-level loops.
         if self._file_timestamps[file_idx] is None:
-            file_start = self._cumulative_frames[file_idx - 1] if file_idx > 0 else 0
             n = self._file_frame_counts[file_idx]
-            self._file_timestamps[file_idx] = self.get_metadata_arrays(
-                [_UNIX_T_NS],
-                indices=np.arange(file_start, file_start + n, dtype=np.int64),
-            )[_UNIX_T_NS]
+            mm = self._get_mmap(file_idx)
+            ts_keys = self._timing_keys()
+            if mm is not None:
+                meta = self._composite_extract(mm, ts_keys, 0, n, self.frame_config)  # type: ignore[arg-type]
+                self._file_timestamps[file_idx] = self._derive_unix_t_ns(meta, ts_keys)
+            else:
+                self._file_timestamps[file_idx] = np.zeros(n, dtype=np.int64)
 
         file_ts = self._file_timestamps[file_idx]
         assert file_ts is not None

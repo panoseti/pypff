@@ -75,6 +75,43 @@ def test_pffsequence_timing_and_seek(dummy_run: Path) -> None:
     idx = seq.seek_time(t0 + 500)
     assert idx in [0, 1]
 
+
+def test_timestamps_at_synthetic(dummy_run: Path) -> None:
+    """timestamps_at on synthetic data (quabo format) agrees with timestamp_at."""
+    files = sorted(list(dummy_run.glob("*.pff")))
+    seq = PFFSequence(files)
+    indices = np.arange(len(seq), dtype=np.int64)
+    batch = seq.timestamps_at(indices)
+    assert batch.dtype == np.int64
+    assert len(batch) == len(seq)
+    # Every element must match the individual timestamp_at result
+    for i in range(len(seq)):
+        assert batch[i] == seq.timestamp_at(i), f"Mismatch at index {i}"
+
+
+def test_timestamps_at_unsorted_order(dummy_run: Path) -> None:
+    """timestamps_at must preserve caller order, not sort order."""
+    files = sorted(list(dummy_run.glob("*.pff")))
+    seq = PFFSequence(files)
+    indices = np.array([len(seq) - 1, 0, 5, 3], dtype=np.int64)
+    batch = seq.timestamps_at(indices)
+    for i, idx in enumerate(indices):
+        assert batch[i] == seq.timestamp_at(int(idx)), \
+            f"Out-of-order result wrong at position {i} (global frame {idx})"
+
+
+def test_timestamps_at_multi_file_span(dummy_run: Path) -> None:
+    """timestamps_at must work correctly when indices span multiple files."""
+    files = sorted(list(dummy_run.glob("*.pff")))
+    seq = PFFSequence(files)
+    # Pick indices from both files (file 0 has frames 0..9, file 1 has 10..19)
+    indices = np.array([0, 9, 10, 19], dtype=np.int64)
+    batch = seq.timestamps_at(indices)
+    for i, idx in enumerate(indices):
+        assert batch[i] == seq.timestamp_at(int(idx)), \
+            f"Cross-file mismatch at index {idx}"
+
+
 def test_pffsequence_stress_many_files(tmp_path: Path) -> None:
     run_dir = tmp_path / "stress_run.pffd"
     run_dir.mkdir()
@@ -87,3 +124,4 @@ def test_pffsequence_stress_many_files(tmp_path: Path) -> None:
     indices = np.random.choice(len(seq), 20, replace=False)
     imgs = seq.read_images(indices)
     assert imgs.shape == (20, 32, 32)
+
