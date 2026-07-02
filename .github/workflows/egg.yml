@@ -2,7 +2,9 @@ name: pypff-CI
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["dev", "opt", "master"]
+  pull_request:
+    branches: ["opt"]
 
 jobs:
   pypff-test:
@@ -13,13 +15,11 @@ jobs:
       - name: clone pypff
         uses: actions/checkout@v4
 
-      - name: install necessary packages
-        run: pip install pytest
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
 
-      - name: install pypff
-        run: pip install .
+      - name: Install dependencies
+        run: uv sync --all-extras
 
       - name: run test
-        run: |
-          cd tests
-          pytest -v ./test_pypff.py
+        run: uv run pypff test all --cov

@@ -1,10 +1,11 @@
 #! /usr/bin/env python3
 
-import json
-from .pixelmap_maroc2phys_bga import *
-from .pixelmap_maroc2phys_qfp import *
-from .pixelmap_phys2maroc_bga import *
-from .pixelmap_phys2maroc_qfp import *
+from collections.abc import Sequence
+
+from .pixelmap_maroc2phys_bga import maroc2phys_bga
+from .pixelmap_maroc2phys_qfp import maroc2phys_qfp
+from .pixelmap_phys2maroc_bga import phys2maroc_bga
+from .pixelmap_phys2maroc_qfp import phys2maroc_qfp
 
 # TODO: "DST_DIM = 16" only works for ph256 mode
 SRC_DIM = 16
@@ -12,7 +13,7 @@ DST_DIM = 16
 
 # get the data index in the data packets
 #
-def get_data_index(qi, bver, loc):
+def get_data_index(qi: int, bver: str, loc: Sequence[int]) -> int:
     '''
     qi: quabo index -- [0,1,2,3]
     bver: board version -- ['bga', 'qfp']
@@ -46,7 +47,7 @@ def get_data_index(qi, bver, loc):
 
 # get the pixel loc in quabo_config
 #
-def get_pixel_loc(qi, bver, index):
+def get_pixel_loc(qi: int, bver: str, index: int) -> list[int]:
     if(bver == 'bga'):
         pixel_map = phys2maroc_bga
     elif(bver == 'qfp'):
@@ -64,7 +65,7 @@ def get_pixel_loc(qi, bver, index):
         i = SRC_DIM - dx - 1
         j = DST_DIM - dy - 1
     elif(qi == 2):
-        i = SRC - dy
+        i = SRC_DIM - dy
         j = DST_DIM - dx - 1
     elif(qi == 3):
         i = dx

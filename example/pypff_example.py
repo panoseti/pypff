@@ -1,30 +1,40 @@
-import pypff
 import os
+
+import pypff
 
 os.chdir('./example-data')
 
-# read hk.pff
-hkpff = pypff.io.hkpff('hk.pff')
-hk_info = hkpff.readhk()
-print(hk_info)
+# Read hk.pff using modernized io2
+print("--- Reading HK ---")
+hk_pff = pypff.io2.hkpff('hk.pff')
+hk_info = hk_pff.readhk()
+print(f"Quabo 1019 Temp 1 readings: {hk_info.get('QUABO_1019', {}).get('DET_TEMP', [])[:3]}...")
 
-# read ph256 data file
-ph256_dpff = pypff.io.datapff('start_2023-08-02T00:39:53Z.dp_ph256.bpp_2.module_254.seqno_0.pff')
-# By default, metadata is not read out, which makes it faster.
-ph256_d, ph256_md = ph256_dpff.readpff(ver='qfb', metadata=True)
-# check metadata
-print(ph256_md)
+# Read ph256 data file using PFFSequence
+print("\n--- Reading PH256 Data ---")
+ph256_seq = pypff.io2.PFFSequence(['start_2023-08-02T00:39:53Z.dp_ph256.bpp_2.module_254.seqno_0.pff'])
+print("Dynamically mapping metadata offsets for fast extraction...")
+ph256_seq.print_metadata_offsets()
+print("\nVerifying offsets against naive JSON parsing...")
+ph256_seq.verify_metadata_offsets(num_frames=10)
 
-# read img16 data file
-img16_dpff = pypff.io.datapff('start_2023-06-08T04:30:29Z.dp_img16.bpp_2.module_1.seqno_0.pff')
-# By default, metadata is not read out, which makes it faster.
-img16_d, img16_md = img16_dpff.readpff(ver='qfb', metadata=True)
-# check metadata
-print(img16_md)
+ph256_data = ph256_seq.read_images_range(count=10)
+ph256_md = ph256_seq.get_all_metadata()
+print(f"PH256 Data Shape: {ph256_data.shape}")
+print(f"First 5 PH256 pkt_nums: {ph256_md.get('pkt_num', [])[:5]}")
 
-# read config files
-# if you don't specify the filename, all the config files will be read
-c = pypff.io.qconfig('*.json')
-print(c.config['obs_config'])
-print(c.config['daq_config'])
-print(c.config['data_config'])
+# Read img16 data file using PFFSequence
+print("\n--- Reading IMG16 Data ---")
+img16_seq = pypff.io2.PFFSequence(['start_2023-06-08T04:30:29Z.dp_img16.bpp_2.module_1.seqno_0.pff'])
+img16_data = img16_seq.read_images_range(count=10)
+img16_md = img16_seq.get_all_metadata()
+print(f"IMG16 Data Shape: {img16_data.shape}")
+# For module mode, keys are nested (e.g. quabo_0)
+print(f"First 5 IMG16 quabo_0 pkt_nums: {img16_md.get('quabo_0', {}).get('pkt_num', [])[:5]}")
+
+# Read config files using PanosetiRun discovery
+print("\n--- Reading Configs via PanosetiRun ---")
+run = pypff.io2.PanosetiRun('.')
+run.show()
+obs_cfg = run.configs.get("obs_config")
+print(f"Obs Config Name: {obs_cfg.name if obs_cfg is not None else 'None'}")

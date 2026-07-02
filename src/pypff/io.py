@@ -1,18 +1,19 @@
 '''
 This module provides methods to reading pff data file, including img16, img8, ph256, ph1024 and hk.pff
 '''
-import json
 import datetime
-import numpy as np
+import json
 import mmap
 from glob import glob
-from . import pixelmap
+from typing import Any
+
+import numpy as np
 
 MOBO_DIM = 16
 QUABO_DIM = 32
 
 # The metadata loc in the data is hard-coded here.
-loc_arr = np.zeros(2, dtype=object)
+loc_arr: np.ndarray = np.zeros(2, dtype=object)
 # metadata loc for ph256
 # metadata example
 '''
@@ -78,8 +79,8 @@ md_loc = {
 }
 # generate dict template
 #
-def _gen_dict_template(d):
-    template = {}
+def _gen_dict_template(d: dict[str, Any]) -> dict[str, Any]:
+    template: dict[str, Any] = {}
     for k in d:
         # chagne TEMP1 to DET_TEMP, and change TEMP1 to FPGA_TEMP
         if k == 'TEMP1':
@@ -89,12 +90,12 @@ def _gen_dict_template(d):
         template[k] = []
     return template
 
-class hkpff(object):
+class hkpff:
     '''
     Description:
         The hkpff class reads hk.pff, and returns a dict, including housekeeping of quabo, wrs, wps and gps
     '''
-    def __init__(self,fn='hk.pff'):
+    def __init__(self,fn: str='hk.pff'):
         '''
         Description:
             Create a hkpff object based on the filename.
@@ -102,9 +103,9 @@ class hkpff(object):
             -- fn(str): file name of a hk.pff 
         '''
         self.fn = fn
-        self.hk_info = {}
+        self.hk_info: dict[str, Any] = {}
                 
-    def readhk(self):
+    def readhk(self) -> dict[str, Any]:
         '''
         Description:
             Read hk.pff, and convert the info to a dict.
@@ -116,11 +117,11 @@ class hkpff(object):
         for hk_str in hk_lines:
             try:
                 hk = json.loads(hk_str)
-            except:
+            except json.JSONDecodeError:
                 continue
             key, = hk.keys()
             # check if the key is already in the hk_info
-            if(not key in self.hk_info):
+            if(key not in self.hk_info):
                 template = _gen_dict_template(hk[key])
                 self.hk_info[key] = template
             for k,v in hk[key].items():
@@ -132,22 +133,22 @@ class hkpff(object):
                 try:
                     # if the type of value is int
                     self.hk_info[key][k].append(int(v))
-                except:
+                except (ValueError, TypeError):
                     try:
                         # if the type of value is float
                         self.hk_info[key][k].append(float(v))
-                    except:
+                    except (ValueError, TypeError):
                         self.hk_info[key][k].append(v)
         return self.hk_info
 
 
-class datapff(object):
+class datapff:
     '''
     Description:
         The datapff class reads all kinds of data files, including img16, img8, ph256, ph1024.
     '''
 
-    def __init__(self, fn):
+    def __init__(self, fn: str):
         '''
         Description:
             Read data from a data pff file.
@@ -158,16 +159,13 @@ class datapff(object):
         fn_str = fn.split('/')[-1]
         info = fn_str.split('.')
         stringIndex = 0
-        if len(info[0]) != 0:
-            stringIndex = 0
-        else:
-            stringIndex = 1
+        stringIndex = 0 if len(info[0]) != 0 else 1
         startdt_str = info[stringIndex].split('_')[1]
         stringIndex += 1
         # It looks like we have two formats of file name
         try:
             self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H:%M:%SZ')
-        except:
+        except ValueError:
             # macos
             self.startdt = datetime.datetime.strptime(startdt_str, '%Y-%m-%dT%H-%M-%SZ')
         self.dp = info[stringIndex].split('_')[1]
@@ -188,15 +186,18 @@ class datapff(object):
             self._pixels = 1024
             self._d_size = self._pixels * self.bpp
             self.datasize = self._md_size + self._d_size
+        
+        self.dtype: type[np.generic]
         if self.dp == 'ph256' or self.dp == 'ph1024':
             self.dtype = np.int16
         elif self.dp == 'img16':
             self.dtype = np.uint16
         else:
             self.dtype = np.uint8
-        self.metadata = {}
+        self.metadata: dict[str, np.ndarray] = {}
+        self.data: np.ndarray
 
-    def readpff(self, samples=-1, skip = 0, pixel = -1, ver='qfb', metadata=False, mode='mmap'):
+    def readpff(self, samples: int=-1, skip: int = 0, pixel: int = -1, ver: str='qfb', metadata: bool=False, mode: str='mmap') -> tuple[np.ndarray, dict[str, np.ndarray]]:
         '''
         Description:
             Read data from a data pff file.
@@ -243,54 +244,55 @@ class datapff(object):
         tmp.shape = (-1, int(self.datasize/self.bpp))
         # get data
         self.data = tmp[:, int(self._md_size/self.bpp):]
-        if metadata==True and tmp.shape[0] != 0:
+        if metadata and tmp.shape[0] != 0:
             # we need to skip the '* ', which are 2 bytes
             if self.bpp == 1:
-                metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 2]
+                metadataraw_orig = tmp[:,0: int(self._md_size/self.bpp) - 2]
             else:
-                metadataraw = tmp[:,0: int(self._md_size/self.bpp) - 1]
-            metadataraw = metadataraw.tobytes()
+                metadataraw_orig = tmp[:,0: int(self._md_size/self.bpp) - 1]
+            
+            metadataraw_bytes = metadataraw_orig.tobytes()
             # convert byte to int8
-            metadataraw = np.frombuffer(metadataraw, dtype=np.int8)
+            metadataraw = np.frombuffer(metadataraw_bytes, dtype=np.int8)
             metadataraw.shape = (-1, self._md_size - 2) 
             # create metadata template
             md_json = json.loads(metadataraw[0].tobytes().decode('utf-8')) 
             if self.dp == 'ph1024' or self.dp == 'img16' or self.dp == 'img8':
                 # ph1024, img16 and img8 data has two stages of metadata
                 template = _gen_dict_template(md_json)
-                for key in template.keys():
+                for key in template:
                     subtemplate = _gen_dict_template(md_json[key])
                     template[key] = subtemplate
                 self.metadata = template
-                for k in metadata_loc.keys():
-                    for subk in metadata_loc[k].keys():
+                for k in metadata_loc:
+                    for subk in metadata_loc[k]:
                         # get the start row and end row from the metadata_loc
                         r0 = metadata_loc[k][subk][0]
                         r1 = metadata_loc[k][subk][1]
-                        tmp = metadataraw[:, r0:r1]
+                        tmp_md = metadataraw[:, r0:r1]
                         # covert int8 to string
-                        tmp = tmp.view(f'S{r1-r0}')
-                        self.metadata[k][subk] = tmp.astype(np.uint64)
+                        tmp_md = tmp_md.view(f'S{r1-r0}')
+                        self.metadata[k][subk] = tmp_md.astype(np.uint64)
             elif self.dp == 'ph256':
                 template = _gen_dict_template(md_json)
                 # ph256 data has one stage of metadata
                 self.metadata = template
-                for k in metadata_loc.keys():
+                for k in metadata_loc:
                     # get the start row and end row from the metadata_loc
                     r0 = metadata_loc[k][0]
                     r1 = metadata_loc[k][1]
-                    tmp = metadataraw[:, r0:r1]
+                    tmp_md = metadataraw[:, r0:r1]
                     # covert int8 to string
-                    tmp = tmp.view(f'S{r1-r0}')
-                    self.metadata[k] = tmp.astype(np.uint64)
+                    tmp_md = tmp_md.view(f'S{r1-r0}')
+                    self.metadata[k] = tmp_md.astype(np.uint64)
             else:
-                raise Exception('Data type is not supproted: %s'%(self.dp))
+                raise Exception(f'Data type is not supproted: {self.dp}')
         if self.dp == 'ph256':
-            for k in self.metadata.keys():
+            for k in self.metadata:
                 self.metadata[k] = np.array(self.metadata[k].flat)
         elif self.dp == 'img16' or self.dp == 'img8' or self.dp == 'ph1024':
-            for k in self.metadata.keys():
-                for kk in self.metadata[k].keys():
+            for k in self.metadata:
+                for kk in self.metadata[k]:
                     self.metadata[k][kk] = np.array(self.metadata[k][kk].flat)
         if pixel != -1:
             self.data = self.data[:,pixel]
@@ -298,16 +300,16 @@ class datapff(object):
 
 
 
-class qconfig(object):
+class qconfig:
     '''
     Description:
         This class is used for reading config json files, including obs_config, daq_config, data_config, quabo_config...
     '''
-    def __init__(self, fn):
-            self.config = {}
+    def __init__(self, fn: str) -> None:
+            self.config: dict[str, Any] = {}
             jfiles = glob(fn)
             if len(jfiles) == 0:
-                raise Exception("The config file(%s) can not be found!"%(fn))
+                raise Exception(f"The config file({fn}) can not be found!")
             for file in jfiles:
                 key = file.split('/')[-1][:-5]
                 with open(file,'rb') as f:
@@ -318,7 +320,7 @@ class qconfig(object):
                     if(key.startswith('quabo_config')):
                         try:
                             tmp = v.split(',')
-                        except:
+                        except (AttributeError, TypeError):
                             tmp = []
                         if len(tmp) == 4:
                             self.config[key][k] = []
