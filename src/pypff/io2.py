@@ -651,7 +651,20 @@ class PFFSequence:
             inv = np.empty_like(sort_order)
             inv[sort_order] = np.arange(count, dtype=np.int64)
 
-            # Group by file for bulk reads
+            # Group by file, then choose between two read strategies:
+            #
+            # DENSE  (≥1% of span needed): one np.frombuffer call over the span,
+            #         then fancy-index the rows we need.  Fast when count ≈ span.
+            #
+            # SPARSE (<1% of span needed): one mmap byte-slice per frame.
+            #         Avoids reading—and string-decoding—millions of unrequested
+            #         frames when e.g. 2 samples are scattered across a 500 k-frame
+            #         file (span/count ≈ 250 000 → would decode 500 k strings instead
+            #         of 2 ten-byte slices).
+            #
+            # The threshold of 100× (1% density) is well below the crossover where
+            # Python loop overhead exceeds the frombuffer allocation cost.
+            _SPARSE_THRESHOLD = 100
             raw_results: dict[str, np.ndarray] = {k: np.zeros(count, dtype=np.int64) for k in real_keys}
             for file_idx, _n_frames in enumerate(self._file_frame_counts):
                 file_start = self._cumulative_frames[file_idx - 1] if file_idx > 0 else 0
@@ -663,12 +676,26 @@ class PFFSequence:
                 mm = self._get_mmap(file_idx)
                 if mm is None:
                     continue
-                for key in real_keys:
-                    if key not in self.metadata_offsets:
-                        continue
-                    ks, ke = self.metadata_offsets[key]
-                    for res_i, li in zip(np.where(mask)[0], local_idx, strict=False):
-                        raw_results[key][res_i] = int(mm[li * conf.frame_size + ks : li * conf.frame_size + ke])
+                where_mask = np.where(mask)[0]
+                m = len(local_idx)
+                lo, hi = int(local_idx.min()), int(local_idx.max()) + 1
+                span = hi - lo
+                if m > 0 and span <= _SPARSE_THRESHOLD * m:
+                    # DENSE: one frombuffer over [lo, hi) then fancy-index
+                    batch = self._composite_extract(mm, real_keys, lo, span, conf)
+                    for key in real_keys:
+                        if key in batch:
+                            raw_results[key][where_mask] = batch[key][local_idx - lo]
+                else:
+                    # SPARSE: per-frame byte reads — O(m) tiny mmap slices
+                    for key in real_keys:
+                        if key not in self.metadata_offsets:
+                            continue
+                        ks, ke = self.metadata_offsets[key]
+                        for j, li in enumerate(local_idx):
+                            raw_results[key][where_mask[j]] = int(
+                                mm[li * conf.frame_size + ks : li * conf.frame_size + ke]
+                            )
 
             # Re-order to caller's original order
             for k in real_keys:
@@ -875,6 +902,26 @@ class PFFSequence:
             return int(self._all_timestamps[idx])
         return int(self.get_metadata_arrays([_UNIX_T_NS], indices=[idx])[_UNIX_T_NS][0])
 
+    def timestamps_at(self, indices: Sequence[int] | np.ndarray) -> np.ndarray:
+        """
+        Return precise nanosecond timestamps for multiple frames in one vectorized call.
+
+        Much faster than calling ``timestamp_at`` in a loop — uses a single
+        ``np.frombuffer`` pass per file group rather than per-frame Python byte reads.
+
+        Parameters
+        ----------
+        indices:
+            Frame indices to look up (any order; results match input order).
+
+        Returns
+        -------
+        np.ndarray of int64, shape ``(len(indices),)``.
+        """
+        return self.get_metadata_arrays(
+            [_UNIX_T_NS], indices=np.asarray(indices, dtype=np.int64)
+        )[_UNIX_T_NS]
+
     def seek_time(self, timestamp_ns: int) -> int:
         """
         Return the index of the frame closest to ``timestamp_ns``.
@@ -899,14 +946,17 @@ class PFFSequence:
                 break
             file_idx = i  # keep advancing to last file
 
-        # Lazily build within-file timestamp array
+        # Lazily build within-file timestamp array using the fast sequential path
+        # (_composite_extract) rather than the indexed path to avoid Python-level loops.
         if self._file_timestamps[file_idx] is None:
-            file_start = self._cumulative_frames[file_idx - 1] if file_idx > 0 else 0
             n = self._file_frame_counts[file_idx]
-            self._file_timestamps[file_idx] = self.get_metadata_arrays(
-                [_UNIX_T_NS],
-                indices=np.arange(file_start, file_start + n, dtype=np.int64),
-            )[_UNIX_T_NS]
+            mm = self._get_mmap(file_idx)
+            ts_keys = self._timing_keys()
+            if mm is not None:
+                meta = self._composite_extract(mm, ts_keys, 0, n, self.frame_config)  # type: ignore[arg-type]
+                self._file_timestamps[file_idx] = self._derive_unix_t_ns(meta, ts_keys)
+            else:
+                self._file_timestamps[file_idx] = np.zeros(n, dtype=np.int64)
 
         file_ts = self._file_timestamps[file_idx]
         assert file_ts is not None
@@ -923,18 +973,37 @@ class PFFSequence:
         return file_start + pos
 
     def _ensure_file_bounds(self) -> None:
-        """Eagerly read first+last frame timestamp for each file if not yet done."""
+        """
+        Eagerly read first+last frame timestamp for each file if not yet done.
+
+        Uses direct mmap byte slices for the two probe frames instead of
+        routing through get_metadata_arrays, which would trigger the indexed
+        path and — for large files — decode the entire span between frame 0
+        and frame N-1.
+        """
+        if not self.frame_config:
+            return
+        conf = self.frame_config
         ts_keys = self._timing_keys()
         for i, (n_frames, bounds) in enumerate(
             zip(self._file_frame_counts, self._file_ts_bounds, strict=False)
         ):
             if bounds is not None or n_frames == 0:
                 continue
-            file_start = self._cumulative_frames[i - 1] if i > 0 else 0
-            probe_idx = np.array([file_start, file_start + n_frames - 1], dtype=np.int64)
-            if n_frames == 1:
-                probe_idx = np.array([file_start], dtype=np.int64)
-            ts_vals = self.get_metadata_arrays([_UNIX_T_NS], indices=probe_idx)[_UNIX_T_NS]
+            mm = self._get_mmap(i)
+            if mm is None:
+                self._file_ts_bounds[i] = (0, 0)
+                continue
+            # Read only the first (and optionally last) local frame via byte slices.
+            probe_local = [0] if n_frames == 1 else [0, n_frames - 1]
+            meta_lists: dict[str, list[int]] = {k: [] for k in ts_keys if k in self.metadata_offsets}
+            for li in probe_local:
+                base = li * conf.frame_size
+                for k in meta_lists:
+                    ks, ke = self.metadata_offsets[k]
+                    meta_lists[k].append(int(mm[base + ks : base + ke]))
+            meta_arr = {k: np.array(v, dtype=np.int64) for k, v in meta_lists.items()}
+            ts_vals = self._derive_unix_t_ns(meta_arr, ts_keys)
             self._file_ts_bounds[i] = (int(ts_vals[0]), int(ts_vals[-1]))
 
     # ── diagnostics ───────────────────────────────────────────
@@ -1070,7 +1139,7 @@ class PanosetiRun:
             "data_config": DataConfig,
             "obs_config": ObsConfig,
             "daq_config": DaqConfig,
-            "quabo_ph_baseline": QuaboPhBaseline,
+            "quabo_ph_baseline": PhBaselineConfig,
             "ph_baseline_config": PhBaselineConfig,
             "network_config": NetworkConfig,
             "quabo_uids": QuaboUids,

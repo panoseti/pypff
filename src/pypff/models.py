@@ -219,7 +219,7 @@ class ObsModuleConfig(BaseModel):
     model_config = ConfigDict(extra='allow')
     mobo_serialno: str
     quabo_version: str | list[str]
-    ip_addr: IPvAnyAddress
+    ip_addr: IPvAnyAddress | str
     wps: str | None = None
     ups: str | None = None
     timing_mode: str | None = Field("wr", pattern="^(wr|gnss)$")
@@ -245,8 +245,8 @@ class ObsConfig(BaseModel):
     """Physical observatory setup and device mapping (obs_config.json)."""
     name: str
     comment: str | None = None
-    wr_ip_addr: IPvAnyAddress | None = IPvAnyAddress("192.168.1.254")  # type: ignore
-    dome_controller_ip_addr: IPvAnyAddress | None = None
+    wr_ip_addr: IPvAnyAddress | str | None = None
+    dome_controller_ip_addr: IPvAnyAddress | str | None = None
     gps_port: str | None = Field("/dev/ttyUSB0")
     detector_overvoltage: int | None = None
     domes: list[ObsDomeConfig]
@@ -272,7 +272,7 @@ class ObsConfig(BaseModel):
 class PortForwarding(BaseStrictModel):
     """Networking metadata for port-forwarded devices (Gateways)."""
     status: bool = Field(False)
-    gw_ip: IPvAnyAddress
+    gw_ip: IPvAnyAddress | str
     reboot_port: list[int | None] | None = Field(None)
     cmd_port: list[int | None] | None = Field(None)
     port: int | None = None
@@ -284,7 +284,7 @@ class DaqNode(BaseModel):
     model_config = ConfigDict(extra='allow')
     username: str
     data_dir: str
-    ip_addr: IPvAnyAddress
+    ip_addr: IPvAnyAddress | str
     module_ids: list[int] | str | int
     bindhost: str | None = Field("0.0.0.0")
     port_forwarding: PortForwarding | None = None
@@ -310,7 +310,7 @@ class DaqConfig(BaseStrictModel):
     """DAQ node networking and storage configuration (daq_config.json)."""
     comment: str | None = None
     head_node_data_dir: str
-    head_node_ip_addr: IPvAnyAddress
+    head_node_ip_addr: IPvAnyAddress | str
     head_node_container: bool | None = Field(False)
     daq_node_module_limit: int | None = Field(4)
     daq_nodes: list[DaqNode]
@@ -321,12 +321,12 @@ class DaqConfig(BaseStrictModel):
 # -----------------------------
 
 class NetworkModule(BaseStrictModel):
-    ip_addr: IPvAnyAddress
+    ip_addr: IPvAnyAddress | str
     port_forwarding: PortForwarding
 
 
 class NetworkDaqNode(BaseStrictModel):
-    ip_addr: IPvAnyAddress
+    ip_addr: IPvAnyAddress | str
     port_forwarding: PortForwarding
 
 
@@ -369,7 +369,7 @@ class QuaboUidEntry(BaseStrictModel):
 
 class QuaboUidModule(BaseModel):
     model_config = ConfigDict(extra='allow')
-    ip_addr: IPvAnyAddress
+    ip_addr: IPvAnyAddress | str
     quabos: list[QuaboUidEntry] = Field(..., min_length=4, max_length=4)
 
 

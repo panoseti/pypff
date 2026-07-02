@@ -37,8 +37,18 @@ uv run mypy src
 | Tier | Path | What it covers |
 |------|------|----------------|
 | 1 — unit | `src/ci/tier1_unit/` | Models, utils — fast, no file I/O |
-| 2 — logic | `src/ci/tier2_logic/` | IO correctness, slicing, concurrency |
+| 2 — logic | `src/ci/tier2_logic/` | IO correctness, slicing, timestamps, concurrency |
 | legacy | `src/ci/legacy_tests/` | Original test suite against sample `.pff` files |
+
+### Key tier-2 test files
+
+| File | Coverage |
+|------|----------|
+| `test_io2_streaming.py` | `iter_batches`, `iter_byte_range`, `__getitem__`, `timestamps`, `timestamp_at`, **`timestamps_at`**, `get_metadata_arrays` (sequential + indexed paths), LRU, context manager |
+| `test_io2_new_features.py` | Slicing, multiprocessing, `seek_time`, **`timestamps_at`** on synthetic multi-file data |
+| `test_io2_vectorization.py` | Module-header metadata structuring, housekeeping parsing, multiprocessing |
+| `test_io2_comprehensive.py` | End-to-end `PanosetiRun` + `PFFSequence` against real example data |
+| `test_io_comparison.py` | `io.py` vs `io2.py` parity |
 
 Test data for legacy tests lives alongside the tests in
 `src/ci/legacy_tests/{hk-data,sci-data,config-data}/`.

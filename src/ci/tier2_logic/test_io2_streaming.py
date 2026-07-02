@@ -356,6 +356,88 @@ def test_seek_time(ph256_seq: PFFSequence) -> None:
     assert idx == 0
 
 
+# ── timestamps_at (batch vectorized) ─────────────────────────
+
+def test_timestamps_at_matches_timestamp_at(ph256_seq: PFFSequence) -> None:
+    """timestamps_at must return the same values as repeated timestamp_at calls."""
+    seq = ph256_seq
+    indices = np.array([0, 1, len(seq) - 1])
+    batch = seq.timestamps_at(indices)
+    assert batch.dtype == np.int64
+    assert len(batch) == len(indices)
+    for i, idx in enumerate(indices):
+        assert batch[i] == seq.timestamp_at(int(idx))
+
+
+def test_timestamps_at_matches_timestamps_full(ph256_seq: PFFSequence) -> None:
+    """timestamps_at with all indices must match the full timestamps() cache."""
+    seq = ph256_seq
+    all_indices = np.arange(len(seq), dtype=np.int64)
+    batch = seq.timestamps_at(all_indices)
+    expected = seq.timestamps()
+    np.testing.assert_array_equal(batch, expected)
+
+
+def test_timestamps_at_unsorted_indices(ph256_seq: PFFSequence) -> None:
+    """Results must come back in caller's original order, not sorted order."""
+    seq = ph256_seq
+    indices = np.array([len(seq) - 1, 0, 2, 1], dtype=np.int64)
+    batch = seq.timestamps_at(indices)
+    ts_all = seq.timestamps()
+    np.testing.assert_array_equal(batch, ts_all[indices])
+
+
+def test_timestamps_at_single_index(ph256_seq: PFFSequence) -> None:
+    """Edge case: single-element batch should equal timestamp_at."""
+    seq = ph256_seq
+    result = seq.timestamps_at(np.array([3], dtype=np.int64))
+    assert len(result) == 1
+    assert result[0] == seq.timestamp_at(3)
+
+
+def test_timestamps_at_strided_sample(ph256_seq: PFFSequence) -> None:
+    """Simulate the extract_timeline use-case: strided sample across the full sequence."""
+    seq = ph256_seq
+    stride = max(len(seq) // 10, 1)
+    indices = np.arange(0, len(seq), stride, dtype=np.int64)
+    batch = seq.timestamps_at(indices)
+    ts_all = seq.timestamps()
+    np.testing.assert_array_equal(batch, ts_all[indices])
+
+
+# ── indexed get_metadata_arrays correctness ───────────────────
+
+def test_get_metadata_indexed_agrees_with_sequential(ph256_seq: PFFSequence) -> None:
+    """
+    The indexed path of get_metadata_arrays (now using _composite_extract + fancy indexing)
+    must produce bit-identical results to the sequential bulk path for the same frames.
+
+    Regression test for the bug where the indexed path used a Python byte-read loop
+    instead of _composite_extract.
+    """
+    seq = ph256_seq
+    keys = ["pkt_num", "tv_sec"]
+    # Get all values via the fast sequential bulk path
+    seq_result = seq.get_metadata_arrays(keys)
+    # Get a subset via the indexed path
+    indices = np.array([0, 1, 2, len(seq) // 2, len(seq) - 1], dtype=np.int64)
+    idx_result = seq.get_metadata_arrays(keys, indices=indices)
+    for k in keys:
+        np.testing.assert_array_equal(
+            idx_result[k], seq_result[k][indices],
+            err_msg=f"Indexed path mismatch for key '{k}'"
+        )
+
+
+def test_get_metadata_indexed_unix_t_ns(ph256_seq: PFFSequence) -> None:
+    """unix_t_ns virtual key must work correctly through the indexed path."""
+    seq = ph256_seq
+    indices = np.array([0, len(seq) // 2, len(seq) - 1], dtype=np.int64)
+    idx_ts = seq.get_metadata_arrays(["unix_t_ns"], indices=indices)["unix_t_ns"]
+    full_ts = seq.timestamps()
+    np.testing.assert_array_equal(idx_ts, full_ts[indices])
+
+
 # ── LRU and context manager ───────────────────────────────────
 
 def test_lru_cap_respected(double_ph256: PFFSequence) -> None:
