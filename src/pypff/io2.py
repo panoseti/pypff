@@ -1070,7 +1070,7 @@ class PanosetiRun:
             "data_config": DataConfig,
             "obs_config": ObsConfig,
             "daq_config": DaqConfig,
-            "quabo_ph_baseline": QuaboPhBaseline,
+            "quabo_ph_baseline": PhBaselineConfig,
             "ph_baseline_config": PhBaselineConfig,
             "network_config": NetworkConfig,
             "quabo_uids": QuaboUids,
