@@ -4,7 +4,7 @@ on:
   push:
     branches: ["dev", "opt", "master"]
   pull_request:
-    branches: ["opt"]
+    branches: ["dev", "opt"]
 
 jobs:
   pypff-test:
