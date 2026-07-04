@@ -81,6 +81,7 @@ if TYPE_CHECKING:
 import contextlib
 
 from ._reader import PanosetiZarrRun, PanosetiZarrStore, open_zarr_run
+from ._inmem import sequence_to_dataset
 
 __all__ = [
     "PFFToZarrConverter",
@@ -90,6 +91,7 @@ __all__ = [
     "ZarrWriter",
     "convert_run",
     "open_zarr_run",
+    "sequence_to_dataset",
 ]
 
 # ── dtype table ──────────────────────────────────────────────────────────────
