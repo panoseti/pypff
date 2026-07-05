@@ -376,6 +376,10 @@ class QuaboUidModule(BaseModel):
 class QuaboUidDome(BaseStrictModel):
     modules: list[QuaboUidModule]
 
+    # Injected by control/utils/config_file.py at runtime; must stay in sync
+    # with control.utils.pydantic_config_models.QuaboUidDome.
+    num: int | None = None
+
 
 class QuaboUids(BaseStrictModel):
     domes: list[QuaboUidDome]
