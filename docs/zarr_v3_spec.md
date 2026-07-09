@@ -10,6 +10,7 @@ and read by `pypff.zarr.PanosetiZarrRun` / `PanosetiZarrStore`.
 ---
 
 ## 1. Overview
+<img width="100%" height="auto" alt="Capture d’écran 2026-07-09 à 15 08 54" src="https://github.com/user-attachments/assets/efc8f64e-8827-40eb-8fe0-99e80182511a" />
 
 One Zarr v3 store is produced per `(data_product, module)` pair in a `.pffd`
 observation run.  The store is a self-contained artifact: it holds pixel data,
